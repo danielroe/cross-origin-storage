@@ -1,0 +1,10 @@
+packages:
+  - playground
+
+overrides:
+  nuxt-cos: 'workspace:*'
+
+allowBuilds:
+  '@parcel/watcher': false
+  esbuild: false
+  unrs-resolver: false
