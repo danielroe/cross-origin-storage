@@ -1,5 +1,5 @@
 import { defineNuxtModule, addServerPlugin, addVitePlugin, createResolver } from '@nuxt/kit'
-import { cosPlugin } from './vite'
+import { cosPlugin } from 'vite-plugin-cross-origin-storage'
 
 export interface ModuleOptions {
   /**
@@ -35,7 +35,6 @@ export default defineNuxtModule<ModuleOptions>({
     addVitePlugin(() => cosPlugin({
       packages: options.packages,
       base: '/_nuxt/',
-      loaderEntry: resolver.resolve('./runtime/loader.entry'),
       onGenerated: (content) => {
         scriptContent = content
       },

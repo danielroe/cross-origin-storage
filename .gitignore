@@ -54,5 +54,6 @@ coverage
 Network Trash Folder
 Temporary Items
 .apdisk
-test/.cos-extension
-test/.plugin-scratch
+**/test/.cos-extension
+**/test/.plugin-scratch
+**/test/.browser-scratch

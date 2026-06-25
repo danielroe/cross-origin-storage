@@ -1,65 +1,24 @@
 {
-  "name": "nuxt-cos",
-  "version": "1.0.0",
-  "description": "My new Nuxt module",
-  "repository": "danielroe/nuxt-cos",
-  "license": "MIT",
+  "name": "nuxt-cos-monorepo",
+  "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/types.d.mts",
-      "import": "./dist/module.mjs"
-    }
+  "packageManager": "pnpm@11.5.3",
+  "description": "Load shared dependencies from Cross-Origin Storage",
+  "author": {
+    "name": "Daniel Roe",
+    "email": "daniel@roe.dev",
+    "url": "https://github.com/danielroe"
   },
-  "main": "./dist/module.mjs",
-  "typesVersions": {
-    "*": {
-      ".": [
-        "./dist/types.d.mts"
-      ]
-    }
-  },
-  "files": [
-    "dist"
-  ],
+  "license": "MIT",
   "scripts": {
-    "prepack": "nuxt-module-build build",
-    "dev": "npm run dev:prepare && nuxt dev playground",
-    "dev:build": "nuxt build playground",
-    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
-    "release": "npm run lint && npm run test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
-    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
-  },
-  "dependencies": {
-    "@nuxt/kit": "^4.4.8",
-    "magic-string": "^0.30.21",
-    "rolldown": "1.1.0"
+    "test": "pnpm -r test:unit",
+    "test:types": "pnpm -r test:types"
   },
   "devDependencies": {
-    "@nuxt/devtools": "^3.2.4",
     "@nuxt/eslint-config": "^1.15.2",
-    "@nuxt/module-builder": "^1.0.2",
-    "@nuxt/schema": "^4.4.8",
-    "@nuxt/test-utils": "^4.0.3",
-    "@types/node": "latest",
-    "changelogen": "^0.6.2",
     "eslint": "^10.4.1",
-    "nuxt": "^4.4.8",
-    "playwright-core": "^1.61.1",
-    "typescript": "~6.0.3",
-    "vite": "^7.3.5",
-    "vitest": "^4.1.8",
-    "vue-tsc": "^3.3.3"
-  },
-  "peerDependencies": {
-    "vite": "^5.0.0 || ^6.0.0 || ^7.0.0"
-  },
-  "peerDependenciesMeta": {
-    "vite": {
-      "optional": true
-    }
+    "typescript": "~6.0.3"
   }
 }

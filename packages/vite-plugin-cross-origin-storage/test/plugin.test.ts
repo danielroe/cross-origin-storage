@@ -4,13 +4,14 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
-import { cosPlugin } from '../src/vite'
+import { cosPlugin } from '../src/index'
 import type { Alias } from 'vite'
 
 // Build inside the project tree so fixtures resolve packages from the project
 // node_modules rather than a detached temp dir.
 const scratchRoot = fileURLToPath(new URL('./.plugin-scratch', import.meta.url))
-const nodeModules = fileURLToPath(new URL('../node_modules', import.meta.url))
+// `.pnpm` lives in the workspace-root node_modules.
+const nodeModules = fileURLToPath(new URL('../../../node_modules', import.meta.url))
 
 function resolvePkg(glob: string): string {
   const match = globSync(glob, { cwd: nodeModules })[0]

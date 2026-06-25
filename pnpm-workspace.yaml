@@ -1,8 +1,5 @@
 packages:
-  - playground
-
-overrides:
-  nuxt-cos: 'workspace:*'
+  - packages/*
 
 allowBuilds:
   '@parcel/watcher': false

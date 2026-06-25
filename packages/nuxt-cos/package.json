@@ -1,0 +1,64 @@
+{
+  "name": "nuxt-cos",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Nuxt module to load shared dependencies from Cross-Origin Storage",
+  "author": {
+    "name": "Daniel Roe",
+    "email": "daniel@roe.dev",
+    "url": "https://github.com/danielroe"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielroe/nuxt-cos.git",
+    "directory": "packages/nuxt-cos"
+  },
+  "keywords": [
+    "nuxt",
+    "nuxt-module",
+    "cross-origin-storage",
+    "cos",
+    "performance"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.mts",
+      "import": "./dist/module.mjs"
+    }
+  },
+  "main": "./dist/module.mjs",
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/types.d.mts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "nuxt-module-build build",
+    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare",
+    "lint": "eslint .",
+    "prepack": "nuxt-module-build build",
+    "test": "pnpm test:unit",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "@nuxt/kit": "^4.4.8",
+    "vite-plugin-cross-origin-storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@nuxt/module-builder": "^1.0.2",
+    "@nuxt/schema": "^4.4.8",
+    "@nuxt/test-utils": "^4.0.3",
+    "@types/node": "latest",
+    "eslint": "^10.4.1",
+    "nuxt": "^4.4.8",
+    "playwright-core": "^1.61.1",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

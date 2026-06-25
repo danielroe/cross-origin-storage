@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import MagicString from 'magic-string'
 import { rolldown } from 'rolldown'
 import { parseAst } from 'rolldown/parseAst'
 import type { Plugin } from 'vite'
 import type { SourceMap } from 'rolldown'
-import type { CosManifest } from './runtime/loader'
+import type { CosManifest } from './loader'
 
 export type { CosManifest }
 
@@ -19,7 +20,18 @@ const MANIFEST_PLACEHOLDER = '__COS_MANIFEST__'
  */
 const RECIPE = 'cos1'
 
-const DEFAULT_LOADER_ENTRY = fileURLToPath(new URL('./runtime/loader.entry.js', import.meta.url))
+// Resolve the loader entry next to this module: `.mjs` when built (dist),
+// `.ts` when run from source (tests). The plugin rolldown-bundles whichever
+// exists into the injected `<script>`.
+function defaultLoaderEntry(): string {
+  for (const ext of ['mjs', 'ts']) {
+    const candidate = fileURLToPath(new URL(`./loader.entry.${ext}`, import.meta.url))
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+  throw new Error('[cos] could not locate the runtime loader entry')
+}
 
 export interface CosPluginOptions {
   /**
@@ -146,7 +158,7 @@ function joinBase(base: string, assetsDir: string): string {
 
 export function cosPlugin(options: CosPluginOptions): Plugin {
   const packages = toMatchers(options.packages)
-  const loaderEntry = options.loaderEntry ?? DEFAULT_LOADER_ENTRY
+  const loaderEntry = options.loaderEntry ?? defaultLoaderEntry()
 
   const collected = new Set<string>()
   let assetsDir = 'assets'

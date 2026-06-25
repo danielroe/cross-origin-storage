@@ -1,0 +1,68 @@
+{
+  "name": "vite-plugin-cross-origin-storage",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Vite plugin to extract shared dependencies into content-addressed chunks loaded from Cross-Origin Storage",
+  "author": {
+    "name": "Daniel Roe",
+    "email": "daniel@roe.dev",
+    "url": "https://github.com/danielroe"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielroe/nuxt-cos.git",
+    "directory": "packages/vite-plugin-cross-origin-storage"
+  },
+  "keywords": [
+    "vite-plugin",
+    "cross-origin-storage",
+    "cos",
+    "content-addressed",
+    "performance"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "vitest dev",
+    "lint": "eslint .",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm lint && pnpm test",
+    "test": "pnpm test:unit && pnpm test:types",
+    "test:unit": "vitest run",
+    "test:types": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "vite": "^5.0.0 || ^6.0.0 || ^7.0.0"
+  },
+  "dependencies": {
+    "magic-string": "^0.30.21",
+    "rolldown": "1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "eslint": "^10.4.1",
+    "hookable": "^5.5.3",
+    "playwright-core": "^1.61.1",
+    "tsdown": "^0.20.3",
+    "typescript": "~6.0.3",
+    "unhead": "^2.1.0",
+    "vite": "^7.3.5",
+    "vitest": "^4.1.8",
+    "vue": "^3.5.0"
+  }
+}
