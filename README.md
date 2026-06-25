@@ -22,8 +22,9 @@ The plugin builds on [Thomas Steiner](https://github.com/tomayac)'s original [`v
 
 ## 🚧 Roadmap
 
-- [ ] **Multi-entry / multi-page builds.**
-- [ ] **Opting transitive dependencies out of COS chunking**.
+- [ ] Multi-entry / multi-page builds.
+- [ ] Opting transitive dependencies out of COS chunking.
+- [ ] Automatic detection of [allow-listed dependencies](https://github.com/tomayac/public-hash-list).
 
 ## Development
 
