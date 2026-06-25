@@ -1,84 +1,36 @@
-<!--
-Get your module up and running quickly.
+# nuxt-cos
 
-Find and replace all on all files (CMD+SHIFT+F):
-- Name: My Module
-- Package name: nuxt-cos
-- Description: My new Nuxt module
--->
+> [!WARNING]
+> Experimental. The [Cross-Origin Storage API](https://github.com/WICG/cross-origin-storage) is an early-stage proposal with no native browser support yet, and the chunk format here is not stable. This is a research project, not a production tool.
 
-# My Module
+Load shared dependencies (such as `vue`) from [Cross-Origin Storage (COS)](https://github.com/WICG/cross-origin-storage).
 
-[![npm version][npm-version-src]][npm-version-href]
-[![npm downloads][npm-downloads-src]][npm-downloads-href]
-[![License][license-src]][license-href]
-[![Nuxt][nuxt-src]][nuxt-href]
+Most sites ship their own copy of common dependencies, and the browser re-downloads them per origin even though the bytes are identical. COS lets a browser keep one shared, content-addressed copy. This project extracts those dependencies into chunks whose filename and inter-chunk references are derived from a SHA-256 of their contents, so two independent sites building the same dependency at the same version produce the same chunk and can share it, with no central registry.
 
-My new Nuxt module for doing amazing things.
+## Packages
 
-- [✨ &nbsp;Release Notes](/CHANGELOG.md)
-<!-- - [🏀 Online playground](https://stackblitz.com/github/danielroe/nuxt-cos?file=playground%2Fapp.vue) -->
-<!-- - [📖 &nbsp;Documentation](https://example.com) -->
+| Package | Description |
+| --- | --- |
+| [`vite-plugin-cross-origin-storage`](./packages/vite-plugin-cross-origin-storage) | The core Vite plugin: content-addressed chunking, bottom-up hashing, and the runtime loader. |
+| [`nuxt-cos`](./packages/nuxt-cos) | A thin Nuxt module wrapping the plugin. |
 
-## Features
+## Status
 
-<!-- Highlight some of the features your module provide here -->
-- ⛰ &nbsp;Foo
-- 🚠 &nbsp;Bar
-- 🌲 &nbsp;Baz
+This is exploratory. The Cross-Origin Storage API is a [WICG proposal](https://github.com/WICG/cross-origin-storage) with no native browser implementation; today it only works via the [browser extension](https://github.com/web-ai-community/cross-origin-storage-extension). Without COS the loader falls back to ordinary network requests, so builds keep working everywhere.
 
-## Quick Setup
+The plugin builds on [Thomas Steiner](https://github.com/tomayac)'s original [`vite-plugin-cross-origin-storage`](https://github.com/tomayac/vite-plugin-cross-origin-storage) and is intended as an update of it, with the aim of merging back upstream.
 
-Install the module to your Nuxt application with one command:
+## Development
 
 ```bash
-npx nuxt module add nuxt-cos
+pnpm install
+pnpm build      # build all packages
+pnpm test       # run unit + e2e tests
+pnpm lint
 ```
 
-That's it! You can now use My Module in your Nuxt app ✨
+The e2e tests will run a real browser with and without the [Cross-Origin Storage extension](https://chromewebstore.google.com/detail/cross-origin-storage/denpnpcgjgikjpoglpjefakmdcbmlgih). The COS-extension tests need a full Chrome for Testing build (`npx playwright-core install chromium`) and clone the extension at test time; set `COS_SKIP_EXTENSION_TEST=1` only in an environment that genuinely cannot run a headed browser.
 
+## License
 
-## Contribution
-
-<details>
-  <summary>Local development</summary>
-  
-  ```bash
-  # Install dependencies
-  npm install
-  
-  # Generate type stubs
-  npm run dev:prepare
-  
-  # Develop with the playground
-  npm run dev
-  
-  # Build the playground
-  npm run dev:build
-  
-  # Run ESLint
-  npm run lint
-  
-  # Run Vitest
-  npm run test
-  npm run test:watch
-  
-  # Release new version
-  npm run release
-  ```
-
-</details>
-
-
-<!-- Badges -->
-[npm-version-src]: https://img.shields.io/npm/v/nuxt-cos/latest.svg?style=flat&colorA=020420&colorB=00DC82
-[npm-version-href]: https://npmjs.com/package/nuxt-cos
-
-[npm-downloads-src]: https://img.shields.io/npm/dm/nuxt-cos.svg?style=flat&colorA=020420&colorB=00DC82
-[npm-downloads-href]: https://npm.chart.dev/nuxt-cos
-
-[license-src]: https://img.shields.io/npm/l/nuxt-cos.svg?style=flat&colorA=020420&colorB=00DC82
-[license-href]: https://npmjs.com/package/nuxt-cos
-
-[nuxt-src]: https://img.shields.io/badge/Nuxt-020420?logo=nuxt
-[nuxt-href]: https://nuxt.com
+[MIT](./LICENSE)

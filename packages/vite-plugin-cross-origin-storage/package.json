@@ -8,6 +8,12 @@
     "email": "daniel@roe.dev",
     "url": "https://github.com/danielroe"
   },
+  "contributors": [
+    {
+      "name": "Thomas Steiner",
+      "url": "https://github.com/tomayac"
+    }
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
