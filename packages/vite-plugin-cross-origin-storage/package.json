@@ -50,7 +50,7 @@
     "prepublishOnly": "pnpm lint && pnpm test",
     "test": "pnpm test:unit && pnpm test:types",
     "test:unit": "vitest run",
-    "test:types": "tsc --noEmit"
+    "test:types": "tsc --noEmit && vitest run --typecheck.only"
   },
   "peerDependencies": {
     "vite": "^5.0.0 || ^6.0.0 || ^7.0.0"

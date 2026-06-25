@@ -43,8 +43,9 @@
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare",
     "lint": "eslint .",
     "prepack": "pnpm --filter vite-plugin-cross-origin-storage build && nuxt-module-build build",
-    "test": "pnpm test:unit",
-    "test:unit": "vitest run"
+    "test": "pnpm test:unit && pnpm test:types",
+    "test:unit": "vitest run",
+    "test:types": "tsc --noEmit && vitest run --typecheck.only"
   },
   "dependencies": {
     "@nuxt/kit": "^4.4.8",

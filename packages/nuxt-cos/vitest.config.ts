@@ -8,5 +8,9 @@ export default defineConfig({
     // The fixture is built into shared `.output` / `.nuxt` dirs; running test
     // files in parallel makes their builds clobber each other.
     fileParallelism: false,
+    typecheck: {
+      include: ['test/**/*.test-d.ts'],
+      tsconfig: './tsconfig.json',
+    },
   },
 })

@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { $fetch, setup } from '@nuxt/test-utils/e2e'
-import type { CosManifest } from '../src/runtime/loader'
+import type { CosManifest } from 'vite-plugin-cross-origin-storage'
 
 function parseManifest(html: string): CosManifest {
   const start = html.indexOf('{"base":')
