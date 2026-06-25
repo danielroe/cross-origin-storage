@@ -42,6 +42,23 @@ export default defineConfig({
 
 For a plain client build, the plugin injects the loader into `index.html` and removes the default entry `<script>` automatically.
 
+## Trying it out
+
+The plugin only runs at build time, so verify against a production build, not the dev server:
+
+```bash
+vite build && vite preview
+```
+
+Then check, in your `dist/<assetsDir>/`, that the managed packages are emitted as content-hashed chunks (a 64-character hex filename like `a1b2c3...e4f5.js`), and that opening the preview URL still loads the app normally. The chunks import each other by `cos1:<hash>` specifiers, resolved at runtime through an injected `<script type="importmap">`.
+
+Without a COS-capable browser the loader fetches each chunk over the network, so this is the network-fallback path: it confirms the chunking and loader work, but not sharing.
+
+To see real Cross-Origin Storage, install the [extension](https://chromewebstore.google.com/detail/cross-origin-storage/denpnpcgjgikjpoglpjefakmdcbmlgih), then:
+
+1. Open the preview URL. On the first load the chunks are fetched and stored in COS (the extension's toolbar popup shows the activity).
+2. Reload, or open a **different** site that ships the same dependency at the same version. In DevTools -> Network, the managed hashed `.js` chunks are no longer fetched; they come from the shared store instead.
+
 ## Options
 
 | Option | Type | Default | Description |
