@@ -42,7 +42,7 @@
     "build": "nuxt-module-build build",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare",
     "lint": "eslint .",
-    "prepack": "nuxt-module-build build",
+    "prepack": "pnpm --filter vite-plugin-cross-origin-storage build && nuxt-module-build build",
     "test": "pnpm test:unit",
     "test:unit": "vitest run"
   },
