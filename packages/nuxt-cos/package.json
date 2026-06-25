@@ -1,7 +1,7 @@
 {
   "name": "nuxt-cos",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Nuxt module to load shared dependencies from Cross-Origin Storage",
   "author": {
     "name": "Daniel Roe",
