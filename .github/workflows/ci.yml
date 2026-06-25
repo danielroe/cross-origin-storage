@@ -8,47 +8,60 @@ on:
     branches:
       - main
 
+permissions: {}
+
 jobs:
   lint:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
-
+          node-version: 24
       - run: npm i -g --force corepack@latest && corepack enable
-
       - name: Install dependencies
-        run: npx nypm@latest i
-
+        run: pnpm install --frozen-lockfile
       - name: Lint
-        run: npm run lint
+        run: pnpm lint
 
   test:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
-
+          node-version: 24
       - run: npm i -g --force corepack@latest && corepack enable
-
       - name: Install dependencies
-        run: npx nypm@latest i
+        run: pnpm install --frozen-lockfile
 
-      - name: Playground prepare
-        run: npm run dev:prepare
+      # nuxt-cos's tests import the built vite plugin and need the Nuxt stub.
+      - name: Build packages
+        run: pnpm build
+      - name: Prepare nuxt-cos
+        run: pnpm --filter nuxt-cos dev:prepare
 
-      - name: Install Playwright browsers
-        run: npx playwright-core install --with-deps chromium
+      - name: Install Playwright browser
+        run: pnpm --filter vite-plugin-cross-origin-storage exec playwright-core install --with-deps chromium
 
       - name: Test
         # xvfb provides a display so the COS extension can run in a headed
         # Chrome for Testing instance; extensions do not load headless.
-        run: xvfb-run --auto-servernum npm run test
+        run: xvfb-run --auto-servernum pnpm test
+
+  test-types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm i -g --force corepack@latest && corepack enable
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: pnpm build
+      - name: Prepare nuxt-cos
+        run: pnpm --filter nuxt-cos dev:prepare
+      - name: Type test
+        run: pnpm test:types
