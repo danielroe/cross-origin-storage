@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import MagicString from 'magic-string'
 import { rolldown } from 'rolldown'
+import { parseAst } from 'rolldown/parseAst'
 import type { Plugin } from 'vite'
+import type { SourceMap } from 'rolldown'
 import type { CosManifest } from './runtime/loader'
 
 export type { CosManifest }
@@ -65,15 +68,74 @@ async function bundleLoader(entry: string): Promise<string> {
   return output[0].code
 }
 
-function rewriteSpecifier(code: string, from: string, to: string): string {
-  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const fromImport = new RegExp(`((?:import|export)\\b[^;'"\\n]*?from\\s*|import\\s*|export\\s*\\*\\s*from\\s*)(["'])${escaped}\\2`, 'g')
-  const bareImport = new RegExp(`(\\bimport\\s*)(["'])${escaped}\\2`, 'g')
-  const dynamic = new RegExp(`(\\bimport\\s*\\(\\s*)(["'])${escaped}\\2(\\s*\\))`, 'g')
-  return code
-    .replace(dynamic, `$1$2${to}$2$3`)
-    .replace(fromImport, `$1$2${to}$2`)
-    .replace(bareImport, `$1$2${to}$2`)
+interface SourceLiteral {
+  value: string
+  start: number
+  end: number
+}
+
+/** Collect every static and dynamic import/export source string literal. */
+function collectImportSources(code: string): SourceLiteral[] {
+  const sources: SourceLiteral[] = []
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== 'object') {
+      return
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        visit(child)
+      }
+      return
+    }
+    const record = node as Record<string, unknown> & { type?: string }
+    if (record.type === 'ImportDeclaration' || record.type === 'ExportNamedDeclaration'
+      || record.type === 'ExportAllDeclaration' || record.type === 'ImportExpression') {
+      const source = record.source as { type?: string, value?: unknown, start?: number, end?: number } | undefined
+      if (source?.type === 'Literal' && typeof source.value === 'string'
+        && typeof source.start === 'number' && typeof source.end === 'number') {
+        sources.push({ value: source.value, start: source.start, end: source.end })
+      }
+    }
+    for (const key in record) {
+      if (key !== 'type') {
+        visit(record[key])
+      }
+    }
+  }
+  visit(parseAst(code))
+  return sources
+}
+
+/**
+ * Rewrite import/export specifiers by AST position rather than by pattern, so a
+ * managed specifier appearing in an ordinary string literal is never touched
+ * and dynamic imports are handled the same as static ones. Returns a sourcemap
+ * only when `withMap` is set (i.e. the source chunk already had one to keep
+ * valid); the standalone cos chunks have no downstream map and skip it.
+ */
+function rewriteSpecifiers(
+  code: string,
+  rewrites: Map<string, string>,
+  fileName: string,
+  withMap: boolean,
+): { code: string, map?: SourceMap } {
+  const sources = collectImportSources(code)
+  const edits = sources.filter(s => rewrites.has(s.value))
+  if (!edits.length) {
+    return { code }
+  }
+
+  const magic = new MagicString(code)
+  for (const { value, start, end } of edits) {
+    // start/end span the literal including its quotes; preserve the quote char.
+    const quote = code[start]
+    magic.overwrite(start, end, `${quote}${rewrites.get(value)!}${quote}`)
+  }
+
+  return {
+    code: magic.toString(),
+    map: withMap ? magic.generateMap({ source: fileName, hires: 'boundary' }) as unknown as SourceMap : undefined,
+  }
 }
 
 function joinBase(base: string, assetsDir: string): string {
@@ -203,10 +265,13 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         }
 
         const { code, deps } = raw.get(id)!
-        let resolved = code
+        // Resolve each dep's hash first (bottom-up), then rewrite in one pass.
+        const rewrites = new Map<string, string>()
         for (const dep of deps) {
-          resolved = rewriteSpecifier(resolved, `cos-dep:${dep}`, contentSpecifier(visit(dep, [...stack, id])))
+          rewrites.set(`cos-dep:${dep}`, contentSpecifier(visit(dep, [...stack, id])))
         }
+        // Standalone cos chunks have no downstream sourcemap, so none is kept.
+        const { code: resolved } = rewriteSpecifiers(code, rewrites, '', false)
 
         const hash = createHash('sha256').update(resolved).digest('hex')
         const fileName = `${assetPrefix}${hash}.js`
@@ -229,15 +294,24 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         visit(id, [])
       }
 
+      // App chunks only reference the packages the app imported directly,
+      // externalised as `cos-ext:<id>` by this plugin's `resolveId`.
+      const appRewrites = new Map<string, string>()
+      for (const id of collected) {
+        appRewrites.set(`cos-ext:${id}`, contentSpecifier(hashes.get(id)!))
+      }
+
       let entry: CosManifest['entry'] | undefined
       for (const file of Object.values(bundle)) {
         if (file.type !== 'chunk') {
           continue
         }
-        // App chunks only reference the packages the app imported directly,
-        // externalised as `cos-ext:<id>` by this plugin's `resolveId`.
-        for (const id of collected) {
-          file.code = rewriteSpecifier(file.code, `cos-ext:${id}`, contentSpecifier(hashes.get(id)!))
+        // Keep the chunk's sourcemap valid when one exists (the consumer enabled
+        // `build.sourcemap`); otherwise skip map generation entirely.
+        const { code, map } = rewriteSpecifiers(file.code, appRewrites, file.fileName, !!file.map)
+        file.code = code
+        if (map) {
+          file.map = map
         }
         if (file.isEntry) {
           // The entry is app-specific and is re-rendered by Vite after this

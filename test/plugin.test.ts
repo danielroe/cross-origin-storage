@@ -25,10 +25,17 @@ interface Built {
   assetsDir: string
   cosChunks: () => string[]
   specifiersOf: (file: string) => string[]
+  appChunks: () => string[]
+  read: (file: string) => string
   html: () => string
 }
 
-async function buildApp(entry: string, packages: Array<string | RegExp>, alias: Alias[]): Promise<Built> {
+async function buildApp(
+  entry: string,
+  packages: Array<string | RegExp>,
+  alias: Alias[],
+  options: { sourcemap?: boolean } = {},
+): Promise<Built> {
   mkdirSync(scratchRoot, { recursive: true })
   const root = mkdtempSync(join(scratchRoot, 'app-'))
   const outDir = join(root, 'dist')
@@ -45,17 +52,20 @@ async function buildApp(entry: string, packages: Array<string | RegExp>, alias: 
     logLevel: 'error',
     resolve: { alias },
     plugins: [cosPlugin({ packages })],
-    build: { outDir, emptyOutDir: true, rollupOptions: { input: join(root, 'index.html') } },
+    build: { outDir, emptyOutDir: true, sourcemap: options.sourcemap ?? false, rollupOptions: { input: join(root, 'index.html') } },
   })
+
+  const read = (file: string): string => readFileSync(join(assetsDir, file), 'utf8')
+  const specifiers = (code: string): string[] =>
+    [...new Set([...code.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)].map(m => m[1]!))]
 
   return {
     outDir,
     assetsDir,
     cosChunks: () => readdirSync(assetsDir).filter(f => /^[a-f0-9]{64}\.js$/.test(f)),
-    specifiersOf: (file) => {
-      const code = readFileSync(join(assetsDir, file), 'utf8')
-      return [...new Set([...code.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)].map(m => m[1]!))]
-    },
+    appChunks: () => readdirSync(assetsDir).filter(f => f.endsWith('.js') && !/^[a-f0-9]{64}\.js$/.test(f)),
+    read,
+    specifiersOf: file => specifiers(read(file)),
     html: () => readFileSync(join(outDir, 'index.html'), 'utf8'),
   }
 }
@@ -148,4 +158,52 @@ describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {
       }
     }
   })
+})
+
+describe('cosPlugin specifier rewriting', () => {
+  const vueAlias: Alias[] = [
+    { find: /^vue$/, replacement: '' }, // replaced per-test below
+  ]
+  vueAlias[0]!.replacement = resolvePkg('.pnpm/vue@*/node_modules/vue/dist/vue.runtime.esm-bundler.js')
+
+  it('does not rewrite a managed specifier that appears in a string literal', async () => {
+    // The string "vue" is data here, not an import; AST-based rewriting must
+    // leave it alone while still rewriting the real import.
+    const app = await buildApp(
+      'import { ref } from "vue"\nconst label = "vue"\ndocument.title = label + String(ref(0).value)\n',
+      [/^(?:vue$|@vue\/)/],
+      vueAlias,
+    )
+    const entry = app.appChunks().map(f => app.read(f)).join('\n')
+    // The literal survives verbatim; the import is content-addressed.
+    expect(entry).toMatch(/["']vue["']/)
+    expect(entry).toMatch(/cos1:[a-f0-9]{64}/)
+  }, 120_000)
+
+  it('rewrites a dynamic import of a managed package', async () => {
+    // Reference the dynamic import from a side effect so it is not tree-shaken.
+    const app = await buildApp(
+      'window.addEventListener("click", () => { import("vue").then(m => { document.title = String(m.ref(0).value) }) })\n',
+      [/^(?:vue$|@vue\/)/],
+      vueAlias,
+    )
+    const entry = app.appChunks().map(f => app.read(f)).join('\n')
+    expect(entry).toMatch(/import\(\s*["']cos1:[a-f0-9]{64}["']\s*\)/)
+  }, 120_000)
+
+  it('keeps the chunk sourcemap valid when build.sourcemap is enabled', async () => {
+    const app = await buildApp(
+      'import { ref } from "vue"\ndocument.title = String(ref(0).value)\n',
+      [/^(?:vue$|@vue\/)/],
+      vueAlias,
+      { sourcemap: true },
+    )
+    const rewritten = app.appChunks().find(f => app.read(f).includes('cos1:'))
+    expect(rewritten, 'expected a rewritten app chunk').toBeDefined()
+
+    const map = JSON.parse(app.read(`${rewritten}.map`))
+    expect(map.version).toBe(3)
+    expect(map.mappings.length).toBeGreaterThan(0)
+    expect(Array.isArray(map.sources)).toBe(true)
+  }, 120_000)
 })
