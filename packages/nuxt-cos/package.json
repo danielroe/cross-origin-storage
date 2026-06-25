@@ -39,10 +39,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "nuxt-module-build build",
+    "build": "nuxt-module-build prepare && nuxt-module-build build",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare",
     "lint": "eslint .",
-    "prepack": "pnpm --filter vite-plugin-cross-origin-storage build && nuxt-module-build build",
+    "prepack": "pnpm --filter vite-plugin-cross-origin-storage build && pnpm build",
     "test": "pnpm test:unit && pnpm test:types",
     "test:unit": "vitest run",
     "test:types": "tsc --noEmit && vitest run --typecheck.only"

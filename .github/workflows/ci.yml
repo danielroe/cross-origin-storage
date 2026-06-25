@@ -35,11 +35,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # nuxt-cos's tests import the built vite plugin and need the Nuxt stub.
-      - name: Build packages
         run: pnpm build
-      - name: Prepare nuxt-cos
-        run: pnpm --filter nuxt-cos dev:prepare
 
       - name: Install Playwright browser
         run: pnpm --filter vite-plugin-cross-origin-storage exec playwright-core install --with-deps chromium
@@ -59,9 +55,7 @@ jobs:
       - run: npm i -g --force corepack@latest && corepack enable
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build packages
+      - name: Build
         run: pnpm build
-      - name: Prepare nuxt-cos
-        run: pnpm --filter nuxt-cos dev:prepare
       - name: Type test
         run: pnpm test:types
