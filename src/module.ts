@@ -1,8 +1,20 @@
 import { createHash } from 'node:crypto'
 import { defineNuxtModule, addServerPlugin, addVitePlugin, createResolver } from '@nuxt/kit'
 import { rolldown } from 'rolldown'
-import { runCosLoader } from './runtime/loader'
 import type { CosManifest } from './runtime/loader'
+
+const MANIFEST_PLACEHOLDER = '__COS_MANIFEST__'
+
+/**
+ * Bundle the runtime loader into a self-contained IIFE with rolldown, leaving
+ * `__COS_MANIFEST__` as a literal token for the caller to substitute.
+ */
+async function bundleLoader(entry: string): Promise<string> {
+  const builder = await rolldown({ input: entry, platform: 'browser', treeshake: true })
+  const { output } = await builder.generate({ format: 'iife', minify: true })
+  await builder.close()
+  return output[0].code
+}
 
 export interface ModuleOptions {
   /**
@@ -41,6 +53,8 @@ export default defineNuxtModule<ModuleOptions>({
     const resolver = createResolver(import.meta.url)
     const packages = options.packages.map(p => typeof p === 'string' ? new RegExp(`^${p}$`) : p)
 
+    const loaderEntry = resolver.resolve('./runtime/loader.entry')
+    let loaderTemplate: Promise<string> | undefined
     let scriptContent = ''
 
     nuxt.options.nitro.virtual ||= {}
@@ -159,7 +173,8 @@ export default defineNuxtModule<ModuleOptions>({
         }
 
         const manifest: CosManifest = { base: '/_nuxt/', entry, chunks: managed }
-        scriptContent = `(${runCosLoader.toString()})(${JSON.stringify(manifest)})`
+        loaderTemplate ??= bundleLoader(loaderEntry)
+        scriptContent = (await loaderTemplate).replace(MANIFEST_PLACEHOLDER, JSON.stringify(manifest))
       },
     }), { client: true, server: false })
   },

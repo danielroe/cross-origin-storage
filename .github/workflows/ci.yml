@@ -45,5 +45,10 @@ jobs:
       - name: Playground prepare
         run: npm run dev:prepare
 
+      - name: Install Playwright browsers
+        run: npx playwright-core install --with-deps chromium
+
       - name: Test
-        run: npm run test
+        # xvfb provides a display so the COS extension can run in a headed
+        # Chrome for Testing instance; extensions do not load headless.
+        run: xvfb-run --auto-servernum npm run test
