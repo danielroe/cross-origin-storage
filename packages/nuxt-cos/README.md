@@ -42,6 +42,24 @@ export default defineNuxtConfig({
 | --- | --- | --- | --- |
 | `packages` | `Array<string \| RegExp>` | `[/^(?:vue$\|@vue\/)/]` | Packages to extract into COS chunks. |
 
+## Trying it out
+
+The module is a no-op in dev, so test a production build:
+
+```bash
+nuxt build && nuxt preview
+```
+
+What to look for:
+
+- In `.output/public/_nuxt/`, the managed packages are emitted as content-hashed chunks (64-character hex filenames like `a1b2c3...e4f5.js`).
+- View source on the rendered page: Nuxt's default entry `<script type="module">` is gone, replaced by a `<script id="cos-loader">` containing the loader and an inlined manifest.
+- The page still hydrates and is interactive.
+
+Without a COS-capable browser the loader fetches each chunk over the network (the fallback path), so this confirms the chunking and loader work, but not sharing.
+
+To see real Cross-Origin Storage, install the [extension](https://chromewebstore.google.com/detail/cross-origin-storage/denpnpcgjgikjpoglpjefakmdcbmlgih), open the preview URL once (the chunks are fetched and stored), then reload or open another site shipping the same Vue version: in DevTools -> Network the hashed chunks are served from the shared store instead of refetched.
+
 ## Browser support
 
 The [Cross-Origin Storage API](https://github.com/WICG/cross-origin-storage) is not yet in any browser. You can try it with the [Cross-Origin Storage browser extension](https://github.com/web-ai-community/cross-origin-storage-extension). Without it, chunks load over the network as usual, so your site keeps working; it just doesn't share them.
