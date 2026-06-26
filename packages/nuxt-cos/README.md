@@ -60,6 +60,8 @@ Without a COS-capable browser the loader fetches each chunk over the network (th
 
 To see real Cross-Origin Storage, install the [extension](https://chromewebstore.google.com/detail/cross-origin-storage/denpnpcgjgikjpoglpjefakmdcbmlgih), open the preview URL once (the chunks are fetched and stored), then reload or open another site shipping the same Vue version: in DevTools -> Network the hashed chunks are served from the shared store instead of refetched.
 
+For local testing it's safest to load the extension unpacked from [`web-ai-community/cross-origin-storage-extension`](https://github.com/web-ai-community/cross-origin-storage-extension).
+
 ## Browser support
 
 The [Cross-Origin Storage API](https://github.com/WICG/cross-origin-storage) is not yet in any browser. You can try it with the [Cross-Origin Storage browser extension](https://github.com/web-ai-community/cross-origin-storage-extension). Without it, chunks load over the network as usual, so your site keeps working; it just doesn't share them.

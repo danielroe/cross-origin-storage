@@ -59,6 +59,8 @@ To see real Cross-Origin Storage, install the [extension](https://chromewebstore
 1. Open the preview URL. On the first load the chunks are fetched and stored in COS (the extension's toolbar popup shows the activity).
 2. Reload, or open a **different** site that ships the same dependency at the same version. In DevTools -> Network, the managed hashed `.js` chunks are no longer fetched; they come from the shared store instead.
 
+For local testing it's safest to load the extension unpacked from [`web-ai-community/cross-origin-storage-extension`](https://github.com/web-ai-community/cross-origin-storage-extension).
+
 ## Options
 
 | Option | Type | Default | Description |
