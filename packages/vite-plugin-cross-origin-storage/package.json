@@ -1,7 +1,7 @@
 {
   "name": "vite-plugin-cross-origin-storage",
   "type": "module",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Vite plugin to extract shared dependencies into content-addressed chunks loaded from Cross-Origin Storage",
   "author": {
     "name": "Daniel Roe",
