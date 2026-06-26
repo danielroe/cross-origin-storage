@@ -35,6 +35,19 @@ describe('ssr', async () => {
     expect(html).not.toMatch(/<script type="module"[^>]*src="\/_nuxt\/[^"]*"/)
   })
 
+  it('keeps the rendered styles, title and meta while stripping the cos-managed head tags', async () => {
+    const html = await $fetch('/')
+    const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
+
+    expect(head).toContain('<title>cos fixture</title>')
+    expect(head).toMatch(/<style|rel="stylesheet"/)
+    expect(head).toContain('<meta charset="utf-8">')
+
+    expect(head).not.toMatch(/<script[^>]*type="module"[^>]*src="\/_nuxt\//)
+    expect(head).not.toMatch(/<link[^>]*rel="(?:modulepreload|prefetch)"[^>]*href="\/_nuxt\//)
+    expect(head).not.toMatch(/<link[^>]*href="\/_nuxt\/[^"]*"[^>]*rel="(?:modulepreload|prefetch)"/)
+  })
+
   it('keys every managed chunk by the content hash it declares', async () => {
     const { chunks } = parseManifest(await $fetch('/'))
     expect(Object.keys(chunks).length).toBe(5)
