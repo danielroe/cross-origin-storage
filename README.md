@@ -14,6 +14,10 @@ Most sites ship their own copy of common dependencies, and the browser re-downlo
 | [`vite-plugin-cross-origin-storage`](./packages/vite-plugin-cross-origin-storage) | The core Vite plugin: content-addressed chunking, bottom-up hashing, and the runtime loader. |
 | [`nuxt-cos`](./packages/nuxt-cos)                                                 | A thin Nuxt module wrapping the plugin.                                                      |
 
+## Demo
+
+[`demo/`](./demo) is a minimal Nuxt site using `nuxt-cos` (and, through it, `vite-plugin-cross-origin-storage`) straight from the local workspace packages. See [`demo/README.md`](./demo/README.md) for how to run it.
+
 ## Status
 
 This is exploratory. The Cross-Origin Storage API is a [WICG proposal](https://github.com/WICG/cross-origin-storage) with no native browser implementation; today it only works via the [browser extension](https://github.com/web-ai-community/cross-origin-storage-extension). Without COS the loader falls back to ordinary network requests, so builds keep working everywhere.
