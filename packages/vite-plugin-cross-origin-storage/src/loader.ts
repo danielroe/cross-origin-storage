@@ -1,17 +1,28 @@
 declare global {
+  interface CrossOriginStorageRequestFileHandleHash {
+    value: string
+    algorithm: string
+  }
+
+  interface CrossOriginStorageRequestFileHandleOptions {
+    create?: boolean
+    origins?: string[] | string
+  }
+
+  interface CrossOriginStorageManager {
+    requestFileHandle: (
+      hash: CrossOriginStorageRequestFileHandleHash,
+      options?: CrossOriginStorageRequestFileHandleOptions,
+    ) => Promise<FileSystemFileHandle>
+  }
+
   interface Navigator {
-    crossOriginStorage?: {
-      requestFileHandles: (
-        descriptors: Array<{ algorithm: string, value: string }>,
-        options?: { create?: boolean },
-      ) => Promise<Array<{
-        getFile: () => Promise<File>
-        createWritable: () => Promise<{
-          write: (data: Blob) => Promise<void>
-          close: () => Promise<void>
-        }>
-      }>>
-    }
+    readonly crossOriginStorage?: CrossOriginStorageManager
+  }
+
+  interface Window {
+    /** The manifest the loader ran with, exposed for introspection (e.g. devtools, demo UIs). */
+    __cosManifest?: CosManifest
   }
 }
 
@@ -23,11 +34,17 @@ export interface CosManifest {
    * loaded straight from the network rather than stored in COS by a content hash.
    */
   entry: { specifier: string, file: string }
-  /** Map of content-addressed specifier to `{ file, hash }` for every COS-managed chunk. */
-  chunks: Record<string, { file: string, hash: string }>
+  /**
+   * Map of content-addressed specifier to `{ file, hash, name }` for every COS-managed chunk.
+   * `name` is the npm package the chunk was bundled from (e.g. `vue`, `@vue/reactivity`), when
+   * it could be derived from the resolved module path; absent for chunks it couldn't be.
+   */
+  chunks: Record<string, { file: string, hash: string, name?: string }>
 }
 
 export async function runCosLoader(manifest: CosManifest): Promise<void> {
+  window.__cosManifest = manifest
+
   const cos = navigator.crossOriginStorage
   const imports: Record<string, string> = {}
 
@@ -41,11 +58,9 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
   async function resolveChunk(hash: string, file: string): Promise<string> {
     if (cos) {
       try {
-        const [handle] = await enqueue(() => cos.requestFileHandles([{ algorithm: 'SHA-256', value: hash }]))
-        if (handle) {
-          const blob = await handle.getFile()
-          return URL.createObjectURL(new Blob([blob], { type: 'text/javascript' }))
-        }
+        const handle = await enqueue(() => cos.requestFileHandle({ algorithm: 'SHA-256', value: hash }))
+        const blob = await handle.getFile()
+        return URL.createObjectURL(new Blob([blob], { type: 'text/javascript' }))
       }
       catch (error) {
         if ((error as Error)?.name !== 'NotFoundError') {
@@ -67,12 +82,10 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
     if (cos) {
       try {
         await enqueue(async () => {
-          const [handle] = await cos.requestFileHandles([{ algorithm: 'SHA-256', value: hash }], { create: true })
-          if (handle) {
-            const writable = await handle.createWritable()
-            await writable.write(blob)
-            await writable.close()
-          }
+          const handle = await cos.requestFileHandle({ algorithm: 'SHA-256', value: hash }, { create: true, origins: '*' })
+          const writable = await handle.createWritable()
+          await writable.write(blob)
+          await writable.close()
         })
       }
       catch (error) {
