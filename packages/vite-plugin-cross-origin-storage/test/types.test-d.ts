@@ -41,7 +41,7 @@ describe('CosManifest', () => {
     expectTypeOf<CosManifest>().toEqualTypeOf<{
       base: string
       entry: { specifier: string, file: string }
-      chunks: Record<string, { file: string, hash: string }>
+      chunks: Record<string, { file: string, hash: string, name?: string }>
     }>()
   })
 })

@@ -63,6 +63,20 @@ function contentSpecifier(hash: string): string {
   return `${RECIPE}:${hash}`
 }
 
+/** Recover the npm package name from a resolved module id's `node_modules` segment. */
+function packageNameFromId(id: string): string | undefined {
+  const marker = '/node_modules/'
+  const index = id.lastIndexOf(marker)
+  if (index === -1) {
+    return undefined
+  }
+  const [first, second] = id.slice(index + marker.length).split('/')
+  if (!first) {
+    return undefined
+  }
+  return first.startsWith('@') && second ? `${first}/${second}` : first
+}
+
 function toMatchers(packages: Array<string | RegExp>): RegExp[] {
   return packages.map(p => typeof p === 'string' ? new RegExp(`^${p}$`) : p)
 }
@@ -288,7 +302,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         const hash = createHash('sha256').update(resolved).digest('hex')
         const fileName = `${assetPrefix}${hash}.js`
         hashes.set(id, hash)
-        managed[contentSpecifier(hash)] = { file: `${hash}.js`, hash }
+        managed[contentSpecifier(hash)] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
         this.emitFile({ type: 'asset', fileName, source: resolved })
         return hash
       }
