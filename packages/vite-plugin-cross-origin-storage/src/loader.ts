@@ -1,25 +1,6 @@
+/// <reference types="wicg-cross-origin-storage" />
+
 declare global {
-  interface CrossOriginStorageRequestFileHandleHash {
-    value: string
-    algorithm: string
-  }
-
-  interface CrossOriginStorageRequestFileHandleOptions {
-    create?: boolean
-    origins?: string[] | string
-  }
-
-  interface CrossOriginStorageManager {
-    requestFileHandle: (
-      hash: CrossOriginStorageRequestFileHandleHash,
-      options?: CrossOriginStorageRequestFileHandleOptions,
-    ) => Promise<FileSystemFileHandle>
-  }
-
-  interface Navigator {
-    readonly crossOriginStorage?: CrossOriginStorageManager
-  }
-
   interface Window {
     /** The manifest the loader ran with, exposed for introspection (e.g. devtools, demo UIs). */
     __cosManifest?: CosManifest

@@ -6,3 +6,6 @@ allowBuilds:
   '@parcel/watcher': false
   esbuild: false
   unrs-resolver: false
+
+minimumReleaseAgeExclude:
+  - '@types/wicg-cross-origin-storage@2026.7.0'
