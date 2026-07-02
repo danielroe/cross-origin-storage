@@ -62,7 +62,7 @@
   "devDependencies": {
     "@types/node": "latest",
     "eslint": "10.5.0",
-    "hookable": "5.5.3",
+    "hookable": "6.1.1",
     "playwright-core": "1.61.1",
     "tsdown": "0.22.3",
     "typescript": "6.0.3",
