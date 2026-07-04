@@ -156,6 +156,10 @@ function joinBase(base: string, assetsDir: string): string {
   return dir ? `${prefix}${dir}/` : prefix
 }
 
+function stripPrefix(fileName: string, prefix: string): string {
+  return prefix && fileName.startsWith(prefix) ? fileName.slice(prefix.length) : fileName
+}
+
 export function cosPlugin(options: CosPluginOptions): Plugin {
   const packages = toMatchers(options.packages)
   const loaderEntry = options.loaderEntry ?? defaultLoaderEntry()
@@ -198,6 +202,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
       }
       const base = options.base ?? joinBase(resolvedBase, assetsDir)
       const assetPrefix = assetsDir ? `${assetsDir.replace(/^\/+|\/+$/g, '')}/` : ''
+      const basePrefix = base.startsWith('/') ? `${base.replace(/^\/+|\/+$/g, '')}/` : ''
 
       // Build each managed package standalone, externalising every dependency
       // by its resolved absolute id. Transitive dependencies are discovered and
@@ -320,7 +325,10 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
           // The entry is app-specific and is re-rendered by Vite after this
           // hook, so it cannot be content-addressed here; it loads from the
           // network under a stable specifier instead.
-          entry = { specifier: `${RECIPE}:entry`, file: file.fileName.replace(new RegExp(`^${assetPrefix}`), '') }
+          entry = {
+            specifier: `${RECIPE}:entry`,
+            file: stripPrefix(stripPrefix(file.fileName, assetPrefix), basePrefix),
+          }
         }
       }
 

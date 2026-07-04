@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "basic",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate"
+  },
+  "dependencies": {
+    "nuxt-cos": "latest",
+    "nuxt": "^4.4.8"
+  }
+}

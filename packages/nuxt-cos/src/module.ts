@@ -1,3 +1,5 @@
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { defineNuxtModule, addServerPlugin, addVitePlugin, createResolver } from '@nuxt/kit'
 import { cosPlugin } from 'vite-plugin-cross-origin-storage'
 
@@ -31,6 +33,29 @@ export default defineNuxtModule<ModuleOptions>({
     nuxt.options.nitro.virtual['virtual:cos-loader'] = () => `export default ${JSON.stringify(scriptContent)}`
 
     addServerPlugin(resolver.resolve('./runtime/server/plugins/inject'))
+
+    nuxt.hook('nitro:build:public-assets', ({ options: { output, publicAssets } }) => {
+      const nuxtAssets = publicAssets.find(asset => asset.baseURL === '/_nuxt')
+      if (!nuxtAssets?.dir) {
+        return
+      }
+
+      const cosAssetsDir = join(nuxtAssets.dir, '..', 'assets')
+      if (!existsSync(cosAssetsDir)) {
+        return
+      }
+
+      const cosChunks = readdirSync(cosAssetsDir).filter(file => /^[a-f0-9]{64}\.js$/.test(file))
+      if (!cosChunks.length) {
+        return
+      }
+
+      const publicNuxtDir = join(output.publicDir, '_nuxt')
+      mkdirSync(publicNuxtDir, { recursive: true })
+      for (const file of cosChunks) {
+        copyFileSync(join(cosAssetsDir, file), join(publicNuxtDir, file))
+      }
+    })
 
     addVitePlugin(() => cosPlugin({
       packages: options.packages,
