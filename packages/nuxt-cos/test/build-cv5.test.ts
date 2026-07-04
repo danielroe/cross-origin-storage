@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -8,6 +8,8 @@ import type { CosManifest } from 'vite-plugin-cross-origin-storage'
 const fixtureDir = fileURLToPath(new URL('./fixtures/basic-cv5', import.meta.url))
 const nitroChunk = join(fixtureDir, '.output/server/chunks/nitro/nitro.mjs')
 const publicNuxt = join(fixtureDir, '.output/public/_nuxt')
+const clientNuxt = join(fixtureDir, '.nuxt/dist/client/_nuxt')
+const clientAssets = join(fixtureDir, '.nuxt/dist/client/assets')
 
 function build(): void {
   rmSync(join(fixtureDir, '.output'), { recursive: true, force: true })
@@ -38,6 +40,8 @@ describe('compatibilityVersion 5 build output', () => {
     expect(base).toBe('/_nuxt/')
     expect(entry.file).not.toMatch(/^_nuxt\//)
     expect(existsSync(join(publicNuxt, entry.file))).toBe(true)
+    expect(readdirSync(clientNuxt).some(file => /^[a-f0-9]{64}\.js$/.test(file))).toBe(true)
+    expect(existsSync(clientAssets)).toBe(false)
 
     for (const { file } of Object.values(chunks)) {
       expect(existsSync(join(publicNuxt, file))).toBe(true)

@@ -46,6 +46,11 @@ export interface CosPluginOptions {
    */
   base?: string
   /**
+   * Build output directory (relative to outDir) where content-addressed COS
+   * chunks are emitted. Defaults to Vite's `build.assetsDir`.
+   */
+  chunkAssetsDir?: string
+  /**
    * Path to the runtime loader entry to bundle into the injected `<script>`.
    * Defaults to the bundled loader. Override only to swap the loader runtime.
    */
@@ -209,7 +214,8 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         return
       }
       const base = options.base ?? joinBase(resolvedBase, assetsDir)
-      const assetPrefix = assetsDir ? `${trimSlashes(assetsDir)}/` : ''
+      const chunkAssetsDir = trimSlashes(options.chunkAssetsDir ?? assetsDir)
+      const assetPrefix = chunkAssetsDir ? `${chunkAssetsDir}/` : ''
       const basePrefix = base.startsWith('/') ? `${trimSlashes(base)}/` : ''
 
       // Build each managed package standalone, externalising every dependency

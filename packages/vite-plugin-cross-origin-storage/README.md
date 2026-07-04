@@ -67,6 +67,7 @@ For local testing it's safest to load the extension unpacked from [`web-ai-commu
 | --- | --- | --- | --- |
 | `packages` | `Array<string \| RegExp>` | (required) | Packages to extract into COS chunks. Matched against the imported specifier; a plain string is an exact match. Transitive dependencies are collected automatically. |
 | `base` | `string` | Vite's `base` + `build.assetsDir` | Public path the chunks are served from. |
+| `chunkAssetsDir` | `string` | Vite's `build.assetsDir` | Output directory (relative to outDir) where COS chunks are emitted. |
 | `loaderEntry` | `string` | bundled loader | Path to a custom runtime loader entry. |
 | `onGenerated` | `(scriptContent: string) => void` | (unset) | Receives the loader `<script>` body once chunks are emitted. SSR frameworks inject it into their own rendered HTML; when omitted the plugin injects into `index.html`. |
 

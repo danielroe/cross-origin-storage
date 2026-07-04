@@ -19,6 +19,7 @@ describe('cosPlugin', () => {
     assertType<CosPluginOptions>({
       packages: ['vue'],
       base: '/_nuxt/',
+      chunkAssetsDir: '_nuxt',
       loaderEntry: '/path/to/loader.entry.mjs',
       onGenerated: (script) => {
         expectTypeOf(script).toEqualTypeOf<string>()
