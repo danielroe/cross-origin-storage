@@ -152,12 +152,20 @@ function rewriteSpecifiers(
 
 function joinBase(base: string, assetsDir: string): string {
   const prefix = base.endsWith('/') ? base : `${base}/`
-  const dir = assetsDir.replace(/^\/+|\/+$/g, '')
+  const dir = trimSlashes(assetsDir)
   return dir ? `${prefix}${dir}/` : prefix
 }
 
 function stripPrefix(fileName: string, prefix: string): string {
   return prefix && fileName.startsWith(prefix) ? fileName.slice(prefix.length) : fileName
+}
+
+function trimSlashes(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && value[start] === '/') start++
+  while (end > start && value[end - 1] === '/') end--
+  return value.slice(start, end)
 }
 
 export function cosPlugin(options: CosPluginOptions): Plugin {
@@ -201,8 +209,8 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         return
       }
       const base = options.base ?? joinBase(resolvedBase, assetsDir)
-      const assetPrefix = assetsDir ? `${assetsDir.replace(/^\/+|\/+$/g, '')}/` : ''
-      const basePrefix = base.startsWith('/') ? `${base.replace(/^\/+|\/+$/g, '')}/` : ''
+      const assetPrefix = assetsDir ? `${trimSlashes(assetsDir)}/` : ''
+      const basePrefix = base.startsWith('/') ? `${trimSlashes(base)}/` : ''
 
       // Build each managed package standalone, externalising every dependency
       // by its resolved absolute id. Transitive dependencies are discovered and
