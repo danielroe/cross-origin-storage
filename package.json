@@ -2,7 +2,7 @@
   "name": "nuxt-cos-monorepo",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.10.0",
   "description": "Load shared dependencies from Cross-Origin Storage",
   "author": {
     "name": "Daniel Roe",
