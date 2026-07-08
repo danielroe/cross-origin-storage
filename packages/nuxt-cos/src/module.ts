@@ -1,5 +1,6 @@
 import { defineNuxtModule, addServerPlugin, addVitePlugin, createResolver } from '@nuxt/kit'
 import { cosPlugin } from 'vite-plugin-cross-origin-storage'
+import { resolveBuildAssetsBase } from './runtime/utils/assets-base'
 
 export interface ModuleOptions {
   /**
@@ -32,12 +33,15 @@ export default defineNuxtModule<ModuleOptions>({
 
     addServerPlugin(resolver.resolve('./runtime/server/plugins/inject'))
 
-    addVitePlugin(() => cosPlugin({
-      packages: options.packages,
-      base: '/_nuxt/',
-      onGenerated: (content) => {
-        scriptContent = content
-      },
-    }), { client: true, server: false })
+    addVitePlugin(() => {
+      const assetsBase = resolveBuildAssetsBase(nuxt.options.app)
+      return cosPlugin({
+        packages: options.packages,
+        base: assetsBase,
+        onGenerated: (content) => {
+          scriptContent = content
+        },
+      })
+    }, { client: true, server: false })
   },
 })
