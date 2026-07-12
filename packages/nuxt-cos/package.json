@@ -56,7 +56,7 @@
     "@nuxt/schema": "4.4.8",
     "@nuxt/test-utils": "4.0.3",
     "@types/node": "latest",
-    "eslint": "10.5.0",
+    "eslint": "10.7.0",
     "nuxt": "4.4.8",
     "playwright-core": "1.61.1",
     "typescript": "6.0.3",
