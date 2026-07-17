@@ -180,7 +180,7 @@ describe('cosPlugin specifier rewriting', () => {
     )
     const entry = app.appChunks().map(f => app.read(f)).join('\n')
     // The literal survives verbatim; the import is content-addressed.
-    expect(entry).toMatch(/["']vue["']/)
+    expect(entry).toMatch(/["'`]vue["'`]/)
     expect(entry).toMatch(/cos1:[a-f0-9]{64}/)
   }, 120_000)
 
@@ -192,7 +192,7 @@ describe('cosPlugin specifier rewriting', () => {
       vueAlias,
     )
     const entry = app.appChunks().map(f => app.read(f)).join('\n')
-    expect(entry).toMatch(/import\(\s*["']cos1:[a-f0-9]{64}["']\s*\)/)
+    expect(entry).toMatch(/import\(\s*["'`]cos1:[a-f0-9]{64}["'`]\s*\)/)
   }, 120_000)
 
   it('keeps the chunk sourcemap valid when build.sourcemap is enabled', async () => {

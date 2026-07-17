@@ -31,10 +31,17 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
   const cos = navigator.crossOriginStorage
   const imports: Record<string, string> = {}
 
+  let cosQueue: Promise<unknown> = Promise.resolve()
+  const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
+    const result = cosQueue.then(task, task)
+    cosQueue = result.catch(() => {})
+    return result
+  }
+
   async function resolveChunk(hash: string, file: string): Promise<string> {
     if (cos) {
       try {
-        const [handle] = await cos.requestFileHandles([{ algorithm: 'SHA-256', value: hash }])
+        const [handle] = await enqueue(() => cos.requestFileHandles([{ algorithm: 'SHA-256', value: hash }]))
         if (handle) {
           const blob = await handle.getFile()
           return URL.createObjectURL(new Blob([blob], { type: 'text/javascript' }))
@@ -59,12 +66,14 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
 
     if (cos) {
       try {
-        const [handle] = await cos.requestFileHandles([{ algorithm: 'SHA-256', value: hash }], { create: true })
-        if (handle) {
-          const writable = await handle.createWritable()
-          await writable.write(blob)
-          await writable.close()
-        }
+        await enqueue(async () => {
+          const [handle] = await cos.requestFileHandles([{ algorithm: 'SHA-256', value: hash }], { create: true })
+          if (handle) {
+            const writable = await handle.createWritable()
+            await writable.write(blob)
+            await writable.close()
+          }
+        })
       }
       catch (error) {
         console.error('[cos] store failed', error)

@@ -102,10 +102,22 @@ function collectImportSources(code: string): SourceLiteral[] {
     const record = node as Record<string, unknown> & { type?: string }
     if (record.type === 'ImportDeclaration' || record.type === 'ExportNamedDeclaration'
       || record.type === 'ExportAllDeclaration' || record.type === 'ImportExpression') {
-      const source = record.source as { type?: string, value?: unknown, start?: number, end?: number } | undefined
+      const source = record.source as {
+        type?: string
+        value?: unknown
+        start?: number
+        end?: number
+        expressions?: unknown[]
+        quasis?: Array<{ value?: { cooked?: unknown } }>
+      } | undefined
       if (source?.type === 'Literal' && typeof source.value === 'string'
         && typeof source.start === 'number' && typeof source.end === 'number') {
         sources.push({ value: source.value, start: source.start, end: source.end })
+      }
+      else if (source?.type === 'TemplateLiteral' && source.expressions?.length === 0
+        && source.quasis?.length === 1 && typeof source.quasis[0]?.value?.cooked === 'string'
+        && typeof source.start === 'number' && typeof source.end === 'number') {
+        sources.push({ value: source.quasis[0].value.cooked, start: source.start, end: source.end })
       }
     }
     for (const key in record) {
