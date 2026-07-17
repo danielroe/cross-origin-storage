@@ -63,6 +63,20 @@ function contentSpecifier(hash: string): string {
   return `${RECIPE}:${hash}`
 }
 
+/** Recover the npm package name from a resolved module id's `node_modules` segment. */
+function packageNameFromId(id: string): string | undefined {
+  const marker = '/node_modules/'
+  const index = id.lastIndexOf(marker)
+  if (index === -1) {
+    return undefined
+  }
+  const [first, second] = id.slice(index + marker.length).split('/')
+  if (!first) {
+    return undefined
+  }
+  return first.startsWith('@') && second ? `${first}/${second}` : first
+}
+
 function toMatchers(packages: Array<string | RegExp>): RegExp[] {
   return packages.map(p => typeof p === 'string' ? new RegExp(`^${p}$`) : p)
 }
@@ -102,10 +116,22 @@ function collectImportSources(code: string): SourceLiteral[] {
     const record = node as Record<string, unknown> & { type?: string }
     if (record.type === 'ImportDeclaration' || record.type === 'ExportNamedDeclaration'
       || record.type === 'ExportAllDeclaration' || record.type === 'ImportExpression') {
-      const source = record.source as { type?: string, value?: unknown, start?: number, end?: number } | undefined
+      const source = record.source as {
+        type?: string
+        value?: unknown
+        start?: number
+        end?: number
+        expressions?: unknown[]
+        quasis?: Array<{ value?: { cooked?: unknown } }>
+      } | undefined
       if (source?.type === 'Literal' && typeof source.value === 'string'
         && typeof source.start === 'number' && typeof source.end === 'number') {
         sources.push({ value: source.value, start: source.start, end: source.end })
+      }
+      else if (source?.type === 'TemplateLiteral' && source.expressions?.length === 0
+        && source.quasis?.length === 1 && typeof source.quasis[0]?.value?.cooked === 'string'
+        && typeof source.start === 'number' && typeof source.end === 'number') {
+        sources.push({ value: source.quasis[0].value.cooked, start: source.start, end: source.end })
       }
     }
     for (const key in record) {
@@ -288,7 +314,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         const hash = createHash('sha256').update(resolved).digest('hex')
         const fileName = `${assetPrefix}${hash}.js`
         hashes.set(id, hash)
-        managed[contentSpecifier(hash)] = { file: `${hash}.js`, hash }
+        managed[contentSpecifier(hash)] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
         this.emitFile({ type: 'asset', fileName, source: resolved })
         return hash
       }

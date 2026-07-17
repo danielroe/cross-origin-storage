@@ -21,6 +21,22 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  demo:
+    dependencies:
+      nuxt:
+        specifier: 4.4.8
+        version: 4.4.8(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@parcel/watcher@2.5.6)(@types/node@26.1.1)(@vue/compiler-sfc@3.5.39)(cac@6.7.14)(db0@0.3.4)(esbuild@0.28.1)(eslint@10.7.0(jiti@2.7.0))(ioredis@5.11.1)(lightningcss@1.32.0)(magicast@0.5.3)(optionator@0.9.4)(rolldown@1.1.4)(rollup-plugin-visualizer@7.0.1(rolldown@1.1.4)(rollup@4.62.2))(rollup@4.62.2)(srvx@0.11.17)(terser@5.48.0)(typescript@6.0.3)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))(yaml@2.9.0)
+      nuxt-cos:
+        specifier: workspace:*
+        version: link:../packages/nuxt-cos
+      vue:
+        specifier: 3.5.39
+        version: 3.5.39(typescript@6.0.3)
+    devDependencies:
+      vite-plugin-cross-origin-storage:
+        specifier: workspace:*
+        version: link:../packages/vite-plugin-cross-origin-storage
+
   packages/nuxt-cos:
     dependencies:
       '@nuxt/kit':
@@ -70,6 +86,9 @@ importers:
       '@types/node':
         specifier: latest
         version: 26.1.1
+      '@types/wicg-cross-origin-storage':
+        specifier: 2026.7.0
+        version: 2026.7.0
       eslint:
         specifier: 10.7.0
         version: 10.7.0(jiti@2.7.0)
@@ -2049,6 +2068,9 @@ packages:
 
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
+
+  '@types/wicg-cross-origin-storage@2026.7.0':
+    resolution: {integrity: sha512-9+df+iRT0q1avCNSq2jUPZM00Qj6mFMejg/DgvIplY77QaHYlXZzoRw/R8vJ5hyx42Xe9MHH/cVIG31eSH0dqw==}
 
   '@typescript-eslint/eslint-plugin@8.62.0':
     resolution: {integrity: sha512-o+mpz7EYiMzXoySXiKmzlabIvTVqUuK5yLrAedRPRDA0IpPFMUV1IXt6OqljIxX/kumN6EjUYp41Hqelh6p/Dw==}
@@ -7040,6 +7062,8 @@ snapshots:
       undici-types: 8.3.0
 
   '@types/resolve@1.20.2': {}
+
+  '@types/wicg-cross-origin-storage@2026.7.0': {}
 
   '@typescript-eslint/eslint-plugin@8.62.0(@typescript-eslint/parser@8.62.0(eslint@10.7.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.7.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
