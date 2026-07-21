@@ -66,7 +66,7 @@
     "hookable": "6.1.1",
     "playwright-core": "1.61.1",
     "tsdown": "0.22.9",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "unhead": "3.1.8",
     "vite": "8.1.5",
     "vite8": "npm:vite@8.1.5",
