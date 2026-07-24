@@ -52,12 +52,12 @@
     "vite-plugin-cross-origin-storage": "workspace:*"
   },
   "devDependencies": {
-    "@nuxt/module-builder": "1.0.2",
-    "@nuxt/schema": "4.4.8",
+    "@nuxt/module-builder": "1.0.3",
+    "@nuxt/schema": "4.5.0",
     "@nuxt/test-utils": "4.0.3",
     "@types/node": "latest",
     "eslint": "10.7.0",
-    "nuxt": "4.4.8",
+    "nuxt": "4.5.0",
     "playwright-core": "1.61.1",
     "typescript": "6.0.3",
     "vitest": "4.1.10"
