@@ -57,17 +57,17 @@
   },
   "dependencies": {
     "magic-string": "^1.0.0",
-    "rolldown": "1.2.0"
+    "rolldown": "1.2.3"
   },
   "devDependencies": {
     "@types/node": "latest",
     "@types/wicg-cross-origin-storage": "2026.7.0",
     "eslint": "10.8.0",
     "hookable": "6.1.1",
-    "playwright-core": "1.62.0",
+    "playwright-core": "1.62.1",
     "tsdown": "0.22.14",
     "typescript": "6.0.3",
-    "unhead": "3.2.3",
+    "unhead": "3.3.1",
     "vite": "8.1.5",
     "vite8": "npm:vite@8.1.5",
     "vitest": "4.1.10",
