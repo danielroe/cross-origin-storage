@@ -100,7 +100,7 @@ describe('cosPlugin with vue', () => {
   it('rewrites managed imports to content-addressed specifiers', () => {
     for (const file of app.cosChunks()) {
       for (const specifier of app.specifiersOf(file)) {
-        expect(specifier).toMatch(/^cos1:[a-f0-9]{64}$/)
+        expect(specifier).toMatch(/^cos:[a-f0-9]{64}$/)
       }
     }
   })
@@ -108,7 +108,7 @@ describe('cosPlugin with vue', () => {
   it('injects the loader into index.html and removes the default entry script', () => {
     const html = app.html()
     expect(html).toContain('<script id="cos-loader">')
-    expect(html).toMatch(/cos1:[a-f0-9]{64}/)
+    expect(html).toMatch(/cos:[a-f0-9]{64}/)
     expect(html).not.toMatch(/<script type="module"[^>]*src="[^"]*\.js"/)
   })
 
@@ -158,7 +158,7 @@ describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {
   it('references dependencies only by content-addressed specifier', () => {
     for (const file of app.cosChunks()) {
       for (const specifier of app.specifiersOf(file)) {
-        expect(specifier).toMatch(/^cos1:[a-f0-9]{64}$/)
+        expect(specifier).toMatch(/^cos:[a-f0-9]{64}$/)
       }
     }
   })
@@ -181,7 +181,7 @@ describe('cosPlugin specifier rewriting', () => {
     const entry = app.appChunks().map(f => app.read(f)).join('\n')
     // The literal survives verbatim; the import is content-addressed.
     expect(entry).toMatch(/["'`]vue["'`]/)
-    expect(entry).toMatch(/cos1:[a-f0-9]{64}/)
+    expect(entry).toMatch(/cos:[a-f0-9]{64}/)
   }, 120_000)
 
   it('rewrites a dynamic import of a managed package', async () => {
@@ -192,7 +192,7 @@ describe('cosPlugin specifier rewriting', () => {
       vueAlias,
     )
     const entry = app.appChunks().map(f => app.read(f)).join('\n')
-    expect(entry).toMatch(/import\(\s*["'`]cos1:[a-f0-9]{64}["'`]\s*\)/)
+    expect(entry).toMatch(/import\(\s*["'`]cos:[a-f0-9]{64}["'`]\s*\)/)
   }, 120_000)
 
   it('keeps the chunk sourcemap valid when build.sourcemap is enabled', async () => {
@@ -202,7 +202,7 @@ describe('cosPlugin specifier rewriting', () => {
       vueAlias,
       { sourcemap: true },
     )
-    const rewritten = app.appChunks().find(f => app.read(f).includes('cos1:'))
+    const rewritten = app.appChunks().find(f => app.read(f).includes('cos:'))
     expect(rewritten, 'expected a rewritten app chunk').toBeDefined()
 
     const map = JSON.parse(app.read(`${rewritten}.map`))
@@ -241,4 +241,167 @@ describe('cosPlugin under Vite 8 (rolldown)', () => {
       expect(written.has(file)).toBe(true)
     }
   })
+})
+
+// A package that ships unbundled source, with a cycle between two internal
+// modules and a third module shared by both of its entry points. This is the
+// shape `vue` and `preact` do not have (they ship pre-bundled `dist` files
+// whose only imports cross package boundaries) and `svelte` does.
+const CYCLIC_PKG = 'cyclic-fixture'
+const SHARED_MARKER = 'cyclic-fixture-shared-state-marker'
+const OTHER_MARKER = 'cyclic-fixture-other-entry-marker'
+/** Matches the package and every subpath, so both entry points are managed. */
+const CYCLIC_MATCHER = new RegExp(`^${CYCLIC_PKG}(?:/|$)`)
+
+function writeCyclicFixture(): { root: string, main: string, other: string } {
+  const root = join(scratchRoot, 'node_modules', CYCLIC_PKG)
+  mkdirSync(root, { recursive: true })
+
+  const files: Record<string, string> = {
+    'package.json': JSON.stringify({
+      name: CYCLIC_PKG,
+      version: '1.0.0',
+      type: 'module',
+      exports: { '.': './index.js', './other': './other.js', './package.json': './package.json' },
+    }),
+    // `a` and `b` import each other: a cycle that cannot be ordered bottom-up,
+    // and so must never be split across chunks.
+    'a.js': `import { b } from './b.js'\n`
+      + `export const marker = '${SHARED_MARKER}'\n`
+      + `let counter = 0\n`
+      + `export const bump = () => ++counter\n`
+      + `export const read = () => counter\n`
+      + `export const a = () => 'a' + b()\n`,
+    'b.js': `import { a } from './a.js'\n`
+      + `export const b = () => 'b'\n`
+      + `export const viaA = () => a()\n`,
+    // Both entry points reach `a.js`, so its module state is a singleton the
+    // split has to preserve.
+    'index.js': `export { a, bump, read, marker } from './a.js'\n`,
+    'other.js': `export { bump, read } from './a.js'\nexport const other = '${OTHER_MARKER}'\n`,
+  }
+  for (const [name, source] of Object.entries(files)) {
+    writeFileSync(join(root, name), source)
+  }
+  return { root, main: join(root, 'index.js'), other: join(root, 'other.js') }
+}
+
+describe('cosPlugin with a package that ships unbundled source', () => {
+  let fixture: ReturnType<typeof writeCyclicFixture>
+  let alias: Alias[]
+
+  beforeAll(() => {
+    fixture = writeCyclicFixture()
+    alias = [
+      { find: new RegExp(`^${CYCLIC_PKG}$`), replacement: fixture.main },
+      { find: new RegExp(`^${CYCLIC_PKG}/other$`), replacement: fixture.other },
+    ]
+  })
+
+  it('builds a package whose internal imports are cyclic', async () => {
+    // Externalising every import, including relative ones, made each source
+    // file its own chunk, and `a.js` <-> `b.js` then had no bottom-up order.
+    const app = await buildApp(
+      `import { a } from "${CYCLIC_PKG}"\ndocument.title = a()\n`,
+      [CYCLIC_MATCHER],
+      alias,
+    )
+    expect(app.cosChunks().length).toBeGreaterThanOrEqual(1)
+    for (const file of app.cosChunks()) {
+      const hash = createHash('sha256').update(readFileSync(join(app.assetsDir, file))).digest('hex')
+      expect(hash).toBe(file.replace('.js', ''))
+    }
+  }, 120_000)
+
+  it('keeps a module shared by two entry points in exactly one chunk', async () => {
+    // The point of building a package's entry points together: `index` and
+    // `other` both reach `a.js`, whose counter is module state. Two copies of
+    // it would be two independent counters.
+    const app = await buildApp(
+      `import { bump } from "${CYCLIC_PKG}"\n`
+      + `import { read } from "${CYCLIC_PKG}/other"\n`
+      + `bump()\ndocument.title = String(read())\n`,
+      [CYCLIC_MATCHER],
+      alias,
+    )
+    const carrying = app.cosChunks().filter(file => app.read(file).includes(SHARED_MARKER))
+    expect(carrying).toHaveLength(1)
+  }, 120_000)
+
+  it('produces identical chunks whichever subset of entry points the app imports', async () => {
+    // The invariant the whole scheme rests on: a chunk's bytes are a function
+    // of the package alone. Two sites importing different entry points must
+    // still share whatever chunks they have in common, so the entry set fed to
+    // the bundler comes from the package's `exports`, not from the app.
+    const [one, both] = await Promise.all([
+      buildApp(
+        `import { a } from "${CYCLIC_PKG}"\ndocument.title = a()\n`,
+        [CYCLIC_MATCHER],
+        alias,
+      ),
+      buildApp(
+        `import { a } from "${CYCLIC_PKG}"\n`
+        + `import { read } from "${CYCLIC_PKG}/other"\n`
+        + `document.title = a() + read()\n`,
+        [CYCLIC_MATCHER],
+        alias,
+      ),
+    ])
+
+    const chunksOfOne = new Set(one.cosChunks())
+    const chunksOfBoth = new Set(both.cosChunks())
+
+    // Importing a second entry point adds a chunk rather than changing the
+    // existing ones.
+    expect(chunksOfOne.size).toBeGreaterThanOrEqual(1)
+    expect(chunksOfBoth.size).toBeGreaterThan(chunksOfOne.size)
+    for (const file of chunksOfOne) {
+      expect(chunksOfBoth.has(file), `${file} is not shared by both builds`).toBe(true)
+    }
+  }, 120_000)
+
+  it('emits only the chunks the app can reach', async () => {
+    // Every declared entry point is built, to keep the split deterministic, but
+    // one the app never imports must not be shipped.
+    const app = await buildApp(
+      `import { a } from "${CYCLIC_PKG}"\ndocument.title = a()\n`,
+      [CYCLIC_MATCHER],
+      alias,
+    )
+    const emitted = app.cosChunks().map(file => app.read(file)).join('\n')
+    expect(emitted).not.toContain(OTHER_MARKER)
+  }, 120_000)
+})
+
+describe('cosPlugin with pre-bundled and source-shipping packages together', () => {
+  it('manages both kinds of package in one build', async () => {
+    // vue ships pre-bundled `dist` files whose only imports cross package
+    // boundaries; the fixture ships unbundled source with an internal cycle.
+    // Both have to be chunked correctly in the same graph.
+    const fixture = writeCyclicFixture()
+    const app = await buildApp(
+      `import { ref } from "vue"\n`
+      + `import { a } from "${CYCLIC_PKG}"\n`
+      + `document.title = a() + String(ref(0).value)\n`,
+      [/^(?:vue$|@vue\/)/, CYCLIC_MATCHER],
+      [
+        { find: /^vue$/, replacement: resolvePkg('.pnpm/vue@*/node_modules/vue/dist/vue.runtime.esm-bundler.js') },
+        { find: new RegExp(`^${CYCLIC_PKG}$`), replacement: fixture.main },
+      ],
+    )
+
+    const names = app.cosChunks()
+    expect(names.length).toBeGreaterThan(1)
+    for (const file of names) {
+      const hash = createHash('sha256').update(readFileSync(join(app.assetsDir, file))).digest('hex')
+      expect(hash).toBe(file.replace('.js', ''))
+      for (const specifier of app.specifiersOf(file)) {
+        expect(specifier).toMatch(/^cos:[a-f0-9]{64}$/)
+      }
+    }
+
+    const combined = names.map(file => app.read(file)).join('\n')
+    expect(combined).toContain(SHARED_MARKER)
+    expect(combined).toMatch(/reactive|effect|ref/)
+  }, 120_000)
 })
