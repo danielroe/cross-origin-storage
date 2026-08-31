@@ -43,7 +43,7 @@ describe('cos build output', () => {
   it('references dependencies only by content-addressed specifier', () => {
     for (const file of cosChunks()) {
       for (const specifier of specifiersOf(file)) {
-        expect(specifier, `${file} imports non-content-addressed ${specifier}`).toMatch(/^cos1:[a-f0-9]{64}$/)
+        expect(specifier, `${file} imports non-content-addressed ${specifier}`).toMatch(/^cos:[a-f0-9]{64}$/)
       }
     }
   })
@@ -61,7 +61,7 @@ describe('cos build output', () => {
     // duplicated or inlined there would be zero or several leaves.
     expect(leaves, 'expected exactly one dependency-free leaf (@vue/shared)').toHaveLength(1)
 
-    const leafSpecifier = `cos1:${leaves[0]!.replace('.js', '')}`
+    const leafSpecifier = `cos:${leaves[0]!.replace('.js', '')}`
     const directDependants = chunks.filter(f => specifiersOf(f).includes(leafSpecifier))
     // runtime-dom, runtime-core and reactivity all import @vue/shared directly.
     expect(directDependants.length).toBeGreaterThanOrEqual(3)

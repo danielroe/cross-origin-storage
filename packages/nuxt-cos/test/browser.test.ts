@@ -24,7 +24,7 @@ async function hydrate(page: Page): Promise<{ errors: string[], failed: string[]
   await page.goto(url('/'), { waitUntil: 'networkidle' })
 
   const importMap = await page.locator('script[type="importmap"]').textContent()
-  expect(importMap).toMatch(/cos1:[a-f0-9]{64}/)
+  expect(importMap).toMatch(/cos:[a-f0-9]{64}/)
 
   // Hydration only completes if the whole cos chunk graph resolved and ran.
   await page.locator('button').click()

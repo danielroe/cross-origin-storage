@@ -31,7 +31,7 @@ describe('ssr', async () => {
   it('injects the cos loader and removes the default entry script', async () => {
     const html = await $fetch('/')
     expect(html).toContain('<script id="cos-loader">')
-    expect(html).toMatch(/cos1:[a-f0-9]{64}/)
+    expect(html).toMatch(/cos:[a-f0-9]{64}/)
     expect(html).not.toMatch(/<script type="module"[^>]*src="\/_nuxt\/[^"]*"/)
   })
 
@@ -52,13 +52,13 @@ describe('ssr', async () => {
     const { chunks } = parseManifest(await $fetch('/'))
     expect(Object.keys(chunks).length).toBe(5)
     for (const [specifier, { hash }] of Object.entries(chunks)) {
-      expect(specifier).toBe(`cos1:${hash}`)
+      expect(specifier).toBe(`cos:${hash}`)
     }
   })
 
   it('declares an entry that is loaded outside cos', async () => {
     const { entry, chunks } = parseManifest(await $fetch('/'))
-    expect(entry.specifier).toBe('cos1:entry')
+    expect(entry.specifier).toBe('cos:entry')
     expect(entry.file).toBeTruthy()
     // The entry is app-specific and must not be a COS-managed chunk.
     expect(chunks[entry.specifier]).toBeUndefined()

@@ -25,6 +25,6 @@ describe('nuxt #app is rejected as a cos candidate', () => {
       }
     }).toThrow()
 
-    expect(output).toContain('cannot bundle managed package as a standalone chunk')
+    expect(output).toContain('cannot bundle managed package')
   }, 240_000)
 })

@@ -88,7 +88,7 @@ describe('browser (pure vite build)', () => {
   async function runApp(page: Page): Promise<void> {
     await page.goto(server.origin, { waitUntil: 'networkidle' })
     const importMap = await page.locator('script[type="importmap"]').textContent()
-    expect(importMap).toMatch(/cos1:[a-f0-9]{64}/)
+    expect(importMap).toMatch(/cos:[a-f0-9]{64}/)
     // The counter only updates if the whole cos chunk graph resolved and ran.
     await page.locator('body').click()
     await page.locator('#app', { hasText: 'count: 1' }).waitFor({ timeout: 5000 })

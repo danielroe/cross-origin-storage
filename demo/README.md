@@ -30,7 +30,7 @@ pnpm preview
 What to look for:
 
 - `.output/public/_nuxt/` contains the managed packages (`vue`, `@vue/*`) as content-hashed chunks (64-character hex filenames).
-- View source on the page: Nuxt's default entry `<script type="module">` is replaced by a `<script id="cos-loader">` containing the loader and an inlined manifest of `cos1:<hash>` chunk references.
+- View source on the page: Nuxt's default entry `<script type="module">` is replaced by a `<script id="cos-loader">` containing the loader and an inlined manifest of `cos:<hash>` chunk references.
 - The page still server-renders and hydrates normally.
 
 Without a COS-capable browser, the loader falls back to fetching each chunk over the network, so this confirms the chunking and loader work end-to-end, but not the cross-origin sharing itself. For that, see the [nuxt-cos README](../packages/nuxt-cos/README.md#trying-it-out).
