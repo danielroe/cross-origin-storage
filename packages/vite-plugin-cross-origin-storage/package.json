@@ -57,7 +57,7 @@
   },
   "dependencies": {
     "magic-string": "^1.0.0",
-    "rolldown": "1.2.5"
+    "rolldown": "1.2.6"
   },
   "devDependencies": {
     "@types/node": "latest",
