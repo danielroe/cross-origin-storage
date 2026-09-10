@@ -31,6 +31,6 @@
     "@nuxt/eslint-config": "1.17.0",
     "eslint": "10.10.0",
     "pkg-pr-new": "0.0.88",
-    "typescript": "6.0.3"
+    "typescript": "7.0.2"
   }
 }
