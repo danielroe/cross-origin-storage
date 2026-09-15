@@ -10,9 +10,9 @@
     "preview": "nuxt preview"
   },
   "dependencies": {
-    "nuxt": "4.4.8",
+    "nuxt": "4.5.2",
     "nuxt-cos": "workspace:*",
-    "vue": "3.5.40"
+    "vue": "3.5.42"
   },
   "devDependencies": {
     "vite-plugin-cross-origin-storage": "workspace:*"
