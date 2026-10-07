@@ -248,8 +248,8 @@ importers:
         specifier: latest
         version: 26.6.4
       '@types/wicg-cross-origin-storage':
-        specifier: 2026.7.0
-        version: 2026.7.0
+        specifier: 2026.10.0
+        version: 2026.10.0
       eslint:
         specifier: 10.12.0
         version: 10.12.0(jiti@2.7.0)(supports-color@10.2.2)
@@ -2238,8 +2238,8 @@ packages:
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
 
-  '@types/wicg-cross-origin-storage@2026.7.0':
-    resolution: {integrity: sha512-9+df+iRT0q1avCNSq2jUPZM00Qj6mFMejg/DgvIplY77QaHYlXZzoRw/R8vJ5hyx42Xe9MHH/cVIG31eSH0dqw==}
+  '@types/wicg-cross-origin-storage@2026.10.0':
+    resolution: {integrity: sha512-snwenTkkpY522t/c/5bwKTlFYSQ2MN8qoEUeHOcm8Lq/R9GbApb5IePe4aZTlKoX+dF0ytylcT6yGX7mrtsEzw==}
 
   '@typescript-eslint/eslint-plugin@8.66.0':
     resolution: {integrity: sha512-p088eaGrzYz1s+7cov0aMOCkNGTJlVxF4jgubf28c8L0Cv9Rloj8YBHnv4hXLq6IIEE1AsjNWavO+k+8kP2Y0A==}
@@ -7572,7 +7572,7 @@ snapshots:
 
   '@types/resolve@1.20.2': {}
 
-  '@types/wicg-cross-origin-storage@2026.7.0': {}
+  '@types/wicg-cross-origin-storage@2026.10.0': {}
 
   '@typescript-eslint/eslint-plugin@8.66.0(@typescript-eslint/parser@8.66.0(eslint@10.12.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.12.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:

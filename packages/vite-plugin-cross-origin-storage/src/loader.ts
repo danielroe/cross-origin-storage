@@ -39,7 +39,7 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
   async function resolveChunk(hash: string, file: string): Promise<string> {
     if (cos) {
       try {
-        const handle = await enqueue(() => cos.requestFileHandle({ algorithm: 'SHA-256', value: hash }))
+        const handle = await enqueue(() => cos.getFileHandle({ algorithm: 'SHA-256', value: hash }))
         const blob = await handle.getFile()
         return URL.createObjectURL(new Blob([blob], { type: 'text/javascript' }))
       }
@@ -63,7 +63,7 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
     if (cos) {
       try {
         await enqueue(async () => {
-          const handle = await cos.requestFileHandle({ algorithm: 'SHA-256', value: hash }, { create: true, origins: '*' })
+          const handle = await cos.getFileHandle({ algorithm: 'SHA-256', value: hash }, { create: true, origins: '*' })
           const writable = await handle.createWritable()
           await writable.write(blob)
           await writable.close()
