@@ -26,7 +26,8 @@ export interface CosManifest {
 export async function runCosLoader(manifest: CosManifest): Promise<void> {
   window.__cosManifest = manifest
 
-  const cos = navigator.crossOriginStorage
+  // Only use COS where `getFileHandle()` itself exists.
+  const cos = typeof navigator.crossOriginStorage?.getFileHandle === 'function' ? navigator.crossOriginStorage : undefined
   const imports: Record<string, string> = {}
 
   let cosQueue: Promise<unknown> = Promise.resolve()
