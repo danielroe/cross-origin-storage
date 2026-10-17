@@ -84,7 +84,7 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
     }),
   )
 
-  imports[manifest.entry.specifier] = new URL(manifest.base + manifest.entry.file, location.origin).href
+  imports[manifest.entry.specifier] = new URL(manifest.base + manifest.entry.file, document.baseURI).href
 
   const script = document.createElement('script')
   script.type = 'importmap'
