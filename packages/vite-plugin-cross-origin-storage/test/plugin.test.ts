@@ -212,6 +212,47 @@ describe('cosPlugin specifier rewriting', () => {
   }, 120_000)
 })
 
+describe('cosPlugin with packages that do not split per file', () => {
+  // Written into the scratch tree's own node_modules, so ids carry the
+  // `/node_modules/<name>/` segment the plugin keys packages by.
+  function writePackage(name: string, files: Record<string, string>): string {
+    const dir = join(scratchRoot, 'node_modules', name)
+    mkdirSync(dir, { recursive: true })
+    for (const [file, content] of Object.entries(files)) {
+      writeFileSync(join(dir, file), content)
+    }
+    return join(dir, 'index.js')
+  }
+
+  it('bundles a package with an internal import cycle into one chunk', async () => {
+    const entry = writePackage('cos-fixture-cycle', {
+      'package.json': '{"name":"cos-fixture-cycle","type":"module","main":"index.js"}',
+      'index.js': 'export { a } from "./a.js"\n',
+      'a.js': 'import { b } from "./b.js"\nexport const a = () => b\n',
+      'b.js': 'import { a } from "./a.js"\nexport const b = () => a\n',
+    })
+    const app = await buildApp(
+      'import { a } from "cos-fixture-cycle"\ndocument.title = String(a)\n',
+      ['cos-fixture-cycle'],
+      [{ find: /^cos-fixture-cycle$/, replacement: entry }],
+    )
+    expect(app.cosChunks()).toHaveLength(1)
+  }, 120_000)
+
+  it('inlines the stand-in for a browser field\'s false', async () => {
+    const entry = writePackage('cos-fixture-browser-false', {
+      'package.json': '{"name":"cos-fixture-browser-false","type":"module","main":"index.js","browser":{"path":false}}',
+      'index.js': 'import path from "path"\nexport const hasPath = () => !!path\n',
+    })
+    const app = await buildApp(
+      'import { hasPath } from "cos-fixture-browser-false"\ndocument.title = String(hasPath)\n',
+      ['cos-fixture-browser-false'],
+      [{ find: /^cos-fixture-browser-false$/, replacement: entry }],
+    )
+    expect(app.cosChunks()).toHaveLength(1)
+  }, 120_000)
+})
+
 describe('cosPlugin under Vite 8 (rolldown)', () => {
   let app: Built
 

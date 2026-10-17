@@ -44,30 +44,79 @@ function serve(dir: string): Promise<{ origin: string, close: () => Promise<void
   })
 }
 
+/** A tiny app whose counter only runs once the whole cos chunk graph has. */
+function writeApp(): string {
+  mkdirSync(scratchRoot, { recursive: true })
+  const root = mkdtempSync(join(scratchRoot, 'app-'))
+  mkdirSync(join(root, 'src'), { recursive: true })
+  writeFileSync(
+    join(root, 'index.html'),
+    '<!doctype html><html><head></head><body><p id="app">count: pending</p>'
+    + '<script type="module" src="/src/main.js"></script></body></html>',
+  )
+  writeFileSync(
+    join(root, 'src/main.js'),
+    'import { ref, watchEffect } from "vue"\n'
+    + 'const count = ref(0)\n'
+    + 'const el = document.querySelector("#app")\n'
+    + 'watchEffect(() => { el.textContent = `count: ${count.value}` })\n'
+    + 'document.querySelector("body").addEventListener("click", () => count.value++)\n',
+  )
+  return root
+}
+
+describe('browser (relative base, served from a sub-path)', () => {
+  let root: string
+  let server: { origin: string, close: () => Promise<void> }
+
+  beforeAll(async () => {
+    root = writeApp()
+    const { cosPlugin } = await import('../src/index')
+    await build({
+      root,
+      base: './',
+      logLevel: 'error',
+      resolve: { alias: { vue: vueEntry } },
+      plugins: [cosPlugin({ packages: [/^(?:vue$|@vue\/)/] })],
+      build: { outDir: join(root, 'dist'), emptyOutDir: true },
+    })
+    // The parent is served, so the app sits under /dist/, the way a project
+    // page sits under its repository name.
+    server = await serve(root)
+  }, 120_000)
+
+  afterAll(async () => {
+    await server?.close()
+    rmSync(scratchRoot, { recursive: true, force: true })
+  })
+
+  it('runs the app from a sub-path, resolving the entry against the document', async () => {
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      const missing: string[] = []
+      page.on('response', res => res.status() === 404 && missing.push(res.url()))
+
+      await page.goto(`${server.origin}/dist/index.html`, { waitUntil: 'networkidle' })
+      await page.locator('body').click()
+      await page.locator('#app', { hasText: 'count: 1' }).waitFor({ timeout: 5000 })
+
+      expect(missing, `fetched from outside the sub-path: ${missing.join(', ')}`).toEqual([])
+    }
+    finally {
+      await browser.close()
+    }
+  })
+})
+
 describe('browser (pure vite build)', () => {
   let outDir: string
   let server: { origin: string, close: () => Promise<void> }
 
   beforeAll(async () => {
     mkdirSync(scratchRoot, { recursive: true })
-    const root = mkdtempSync(join(scratchRoot, 'app-'))
+    const root = writeApp()
     outDir = join(root, 'dist')
-    mkdirSync(join(root, 'src'), { recursive: true })
-    writeFileSync(
-      join(root, 'index.html'),
-      '<!doctype html><html><head></head><body><p id="app">count: pending</p>'
-      + '<script type="module" src="/src/main.js"></script></body></html>',
-    )
-    // Hydration-equivalent: mount a counter so the test can prove the cos chunk
-    // graph actually executed in the browser, not just that it loaded.
-    writeFileSync(
-      join(root, 'src/main.js'),
-      'import { ref, watchEffect } from "vue"\n'
-      + 'const count = ref(0)\n'
-      + 'const el = document.querySelector("#app")\n'
-      + 'watchEffect(() => { el.textContent = `count: ${count.value}` })\n'
-      + 'document.querySelector("body").addEventListener("click", () => count.value++)\n',
-    )
 
     const { cosPlugin } = await import('../src/index')
     await build({

@@ -77,6 +77,15 @@ function packageNameFromId(id: string): string | undefined {
   return first.startsWith('@') && second ? `${first}/${second}` : first
 }
 
+/** The directory a resolved module id's package lives in. */
+function packageRootFromId(id: string): string | undefined {
+  const name = packageNameFromId(id)
+  if (!name) {
+    return undefined
+  }
+  return id.slice(0, id.lastIndexOf('/node_modules/') + '/node_modules/'.length + name.length)
+}
+
 function toMatchers(packages: Array<string | RegExp>): RegExp[] {
   return packages.map(p => typeof p === 'string' ? new RegExp(`^${p}$`) : p)
 }
@@ -253,6 +262,18 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
                 }
                 const dep = await this.resolve(id, importer, { skipSelf: true })
                 if (!dep) {
+                  return null
+                }
+                // Virtual modules, such as the empty stand-in for a `browser`
+                // field's `false`, have no package to share.
+                if (dep.id.startsWith('\0')) {
+                  return null
+                }
+                // Files of the same package are bundled into its chunk. Split
+                // per file, a package's internal import cycles would become
+                // cycles between chunks, which bottom-up hashing cannot order.
+                const root = packageRootFromId(dep.id)
+                if (root && root === packageRootFromId(importer)) {
                   return null
                 }
                 deps.add(dep.id)
