@@ -10,7 +10,7 @@
     },
     "packageManager": {
       "name": "pnpm",
-      "version": "12.9.1",
+      "version": "12.11.2",
       "onFail": "download"
     }
   },
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@nuxt/eslint-config": "1.17.0",
     "eslint": "10.12.0",
-    "pkg-pr-new": "0.0.88",
+    "pkg-pr-new": "0.0.91",
     "typescript": "6.0.3"
   }
 }
