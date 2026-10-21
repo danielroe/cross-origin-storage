@@ -64,14 +64,21 @@ function contentSpecifier(hash: string): string {
   return `${RECIPE}:${hash}`
 }
 
+const NODE_MODULES = '/node_modules/'
+
+/**
+ * The part of a resolved module id that starts at its package name
+ * (`vue/dist/vue.js`), which is the same on every machine and under every
+ * package manager's `node_modules` layout.
+ */
+function packagePathFromId(id: string): string | undefined {
+  const index = id.lastIndexOf(NODE_MODULES)
+  return index === -1 ? undefined : id.slice(index + NODE_MODULES.length)
+}
+
 /** Recover the npm package name from a resolved module id's `node_modules` segment. */
 function packageNameFromId(id: string): string | undefined {
-  const marker = '/node_modules/'
-  const index = id.lastIndexOf(marker)
-  if (index === -1) {
-    return undefined
-  }
-  const [first, second] = id.slice(index + marker.length).split('/')
+  const [first, second] = packagePathFromId(id)?.split('/') ?? []
   if (!first) {
     return undefined
   }
@@ -79,26 +86,15 @@ function packageNameFromId(id: string): string | undefined {
 }
 
 /**
- * The part of a resolved module id that starts at its package name
- * (`vue/dist/vue.js`), which is the same on every machine and under every
- * package manager's `node_modules` layout.
- */
-function packagePathFromId(id: string): string {
-  const marker = '/node_modules/'
-  const index = id.lastIndexOf(marker)
-  return index === -1 ? id : id.slice(index + marker.length)
-}
-
-/**
  * Tarjan's strongly connected components, emitted dependencies first: every
  * component comes after all the components it imports from.
  */
-function stronglyConnectedComponents(ids: string[], depsOf: (id: string) => string[]): string[][] {
+function stronglyConnectedComponents(ids: string[], depsOf: (id: string) => string[]): Array<[string, ...string[]]> {
   const index = new Map<string, number>()
   const lowLink = new Map<string, number>()
   const stack: string[] = []
   const onStack = new Set<string>()
-  const components: string[][] = []
+  const components: Array<[string, ...string[]]> = []
 
   const connect = (id: string): void => {
     index.set(id, index.size)
@@ -122,7 +118,7 @@ function stronglyConnectedComponents(ids: string[], depsOf: (id: string) => stri
         onStack.delete(member)
         component.push(member)
       } while (member !== id)
-      components.push(component)
+      components.push(component as [string, ...string[]])
     }
   }
 
@@ -466,31 +462,31 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
 
       const emit = (id: string, code: string, specifier?: string): void => {
         const hash = createHash('sha256').update(code).digest('hex')
-        specifiers.set(id, specifier ?? contentSpecifier(hash))
-        managed[specifiers.get(id)!] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
+        const key = specifier ?? contentSpecifier(hash)
+        specifiers.set(id, key)
+        managed[key] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
         this.emitFile({ type: 'asset', fileName: `${assetPrefix}${hash}.js`, source: code })
       }
 
       for (const component of stronglyConnectedComponents([...raw.keys()], id => raw.get(id)!.deps)) {
-        if (component.length === 1 && !raw.get(component[0]!)!.deps.includes(component[0]!)) {
-          emit(component[0]!, rewriteDeps(component[0]!, dep => specifiers.get(dep)!))
+        const [first] = component
+        if (component.length === 1 && !raw.get(first)!.deps.includes(first)) {
+          emit(first, rewriteDeps(first, dep => specifiers.get(dep)!))
           continue
         }
 
-        // Order the members by their path within their package, so the group
-        // hash and each member's number are the same on every machine.
+        // Order the members by their path within their package, so each
+        // member's number is the same on every machine.
         const members = component
-          .map(id => [packagePathFromId(id), id] as const)
+          .map(id => [packagePathFromId(id) ?? id, id] as const)
           .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
           .map(([, id]) => id)
         const placeholders = new Map(members.map((id, n) => [id, `cos-cycle:${n}`]))
         const drafts = members.map(id => rewriteDeps(id, dep => specifiers.get(dep) ?? placeholders.get(dep)!))
-        const group = createHash('sha256')
-          .update(JSON.stringify(members.map((id, n) => [packagePathFromId(id), drafts[n]])))
-          .digest('hex')
-        const memberSpecifiers = new Map(members.map((_, n) => [`cos-cycle:${n}`, `${contentSpecifier(group)}-${n}`]))
+        const group = contentSpecifier(createHash('sha256').update(JSON.stringify(drafts)).digest('hex'))
+        const memberSpecifiers = new Map(members.map((_, n) => [`cos-cycle:${n}`, `${group}-${n}`]))
         members.forEach((id, n) => {
-          emit(id, rewriteSpecifiers(drafts[n]!, memberSpecifiers, '', false).code, `${contentSpecifier(group)}-${n}`)
+          emit(id, rewriteSpecifiers(drafts[n]!, memberSpecifiers, '', false).code, `${group}-${n}`)
         })
       }
 

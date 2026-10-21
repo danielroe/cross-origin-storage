@@ -219,8 +219,8 @@ describe('cosPlugin specifier rewriting', () => {
 describe('cosPlugin with package-internal imports', () => {
   // Written into the scratch tree's own node_modules, so ids carry the
   // `/node_modules/<name>/` segment the plugin keys packages by.
-  function writePackage(name: string, files: Record<string, string>): string {
-    const dir = join(scratchRoot, 'node_modules', name)
+  function writePackage(name: string, files: Record<string, string>, parent = join(scratchRoot, 'node_modules')): string {
+    const dir = join(parent, name)
     mkdirSync(dir, { recursive: true })
     for (const [file, content] of Object.entries(files)) {
       writeFileSync(join(dir, file), content)
@@ -252,6 +252,48 @@ describe('cosPlugin with package-internal imports', () => {
     const group = imported[0]!.replace(/-0$/, '')
     expect(group).toMatch(/^cos1:[a-f0-9]{64}$/)
     expect(imported).toEqual([`${group}-0`, `${group}-1`])
+  }, 120_000)
+
+  it('hashes an import cycle the same wherever the package is', async () => {
+    const builds = await Promise.all(['one', 'two'].map((tree) => {
+      const entry = writePackage('cycle', {
+        'index.js': 'export { a } from "./a.js"\n',
+        'a.js': 'import { b } from "./b.js"\nexport const a = () => b\n',
+        'b.js': 'import { a } from "./a.js"\nexport const b = () => a\n',
+      }, join(scratchRoot, tree))
+      return buildApp(
+        'import { a } from "cycle"\ndocument.title = String(a)\n',
+        ['cycle'],
+        [{ find: /^cycle$/, replacement: entry }],
+      )
+    }))
+    expect(builds[0]!.cosChunks()).toHaveLength(3)
+    expect(builds[0]!.cosChunks().sort()).toEqual(builds[1]!.cosChunks().sort())
+  }, 120_000)
+
+  it('hashes an import cycle across packages the same however they are nested', async () => {
+    const cycleA = {
+      'package.json': '{"name":"cycle-a","type":"module","main":"index.js"}',
+      'index.js': 'import { z } from "cycle-z"\nexport const a = () => z\n',
+    }
+    const cycleZ = {
+      'package.json': '{"name":"cycle-z","type":"module","main":"index.js"}',
+      'index.js': 'import { a } from "cycle-a"\nexport const z = () => a\n',
+    }
+    const siblings = join(scratchRoot, 'siblings', 'node_modules')
+    const nested = join(scratchRoot, 'nested', 'node_modules')
+    writePackage('cycle-z', cycleZ, siblings)
+    writePackage('cycle-z', cycleZ, nested)
+    const builds = await Promise.all([
+      writePackage('cycle-a', cycleA, siblings),
+      writePackage('cycle-a', cycleA, join(nested, 'cycle-z', 'node_modules')),
+    ].map(entry => buildApp(
+      'import { a } from "cycle-a"\ndocument.title = String(a)\n',
+      [/^cycle-[az]$/],
+      [{ find: /^cycle-a$/, replacement: entry }],
+    )))
+    expect(builds[0]!.cosChunks()).toHaveLength(2)
+    expect(builds[0]!.cosChunks().sort()).toEqual(builds[1]!.cosChunks().sort())
   }, 120_000)
 
   it('keeps one copy of a module that several entry points of its package import', async () => {
