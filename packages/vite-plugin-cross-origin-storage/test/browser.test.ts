@@ -412,6 +412,27 @@ describe('browser (loader with a stub cos)', () => {
       await browser.close()
     }
   })
+
+  it('refuses a chunk from the network whose bytes do not match its hash', async () => {
+    const [largest] = manifestChunks().sort((a, b) => b.size - a.size)
+    const file = join(outDir, 'assets', `${largest!.hash}.js`)
+    const original = readFileSync(file, 'utf8')
+    writeFileSync(file, `${original}\n`)
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      const errors: string[] = []
+      page.on('pageerror', error => errors.push(error.message))
+      page.on('console', msg => msg.type() === 'error' && errors.push(msg.text()))
+      await page.goto(server.origin, { waitUntil: 'networkidle' })
+      expect(await page.locator('#app').textContent()).toBe('count: pending')
+      expect(errors.join('\n')).toMatch(/integrity/i)
+    }
+    finally {
+      writeFileSync(file, original)
+      await browser.close()
+    }
+  })
 })
 
 describe('browser (pure vite build)', () => {

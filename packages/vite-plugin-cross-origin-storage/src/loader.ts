@@ -59,6 +59,11 @@ function writeStored(hashes: Set<string>): void {
   }
 }
 
+function integrity(hash: string): string {
+  const bytes = hash.match(/../g)!.map(byte => Number.parseInt(byte, 16))
+  return `sha256-${btoa(String.fromCharCode(...bytes))}`
+}
+
 export async function runCosLoader(manifest: CosManifest): Promise<void> {
   window.__cosManifest = manifest
 
@@ -148,7 +153,7 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
       return URL.createObjectURL(new Blob([hit], { type: 'text/javascript' }))
     }
 
-    const response = await fetch(file)
+    const response = await fetch(file, { integrity: integrity(hash) })
     if (!response.ok) {
       throw new Error(`[cos] failed to fetch chunk ${file}: ${response.status} ${response.statusText}`)
     }
