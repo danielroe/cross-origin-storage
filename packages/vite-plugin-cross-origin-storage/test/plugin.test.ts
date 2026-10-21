@@ -115,6 +115,10 @@ describe('cosPlugin with vue', () => {
   it('derives the base path from the vite config', () => {
     expect(app.html()).toMatch(/"base":"\/assets\/"/)
   })
+
+  it('leaves `assets` out of the manifest when no file is referenced', () => {
+    expect(app.html()).not.toContain('"assets"')
+  })
 })
 
 describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {

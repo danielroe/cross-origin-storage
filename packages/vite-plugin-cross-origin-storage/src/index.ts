@@ -526,7 +526,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         return
       }
 
-      const manifest: CosManifest = { base, entry, chunks: managed, assets }
+      const manifest: CosManifest = { base, entry, chunks: managed, ...(assetSpecifiers.size ? { assets } : {}) }
       loaderTemplate ??= bundleLoader(loaderEntry)
       scriptContent = (await loaderTemplate).replace(MANIFEST_PLACEHOLDER, JSON.stringify(manifest))
       options.onGenerated?.(scriptContent)
