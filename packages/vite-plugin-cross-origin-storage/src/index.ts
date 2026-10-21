@@ -384,8 +384,10 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
                   return rewritten.assets.length ? { code: rewritten.code } : null
                 },
               },
-              async resolveId(id, importer) {
-                if (!importer) {
+              async resolveId(id, importer, { kind }) {
+                // A `require()` cannot load an ES module chunk, so required
+                // files are bundled into the chunk that requires them.
+                if (!importer || (kind !== 'import-statement' && kind !== 'dynamic-import')) {
                   return null
                 }
                 const dep = await this.resolve(id, importer, { skipSelf: true })

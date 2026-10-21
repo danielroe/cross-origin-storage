@@ -333,6 +333,23 @@ describe('cosPlugin with package-internal imports', () => {
     expect(app.html()).toContain(`"assets":{"cos1:${hash}":{"file":"${hash}.wasm"`)
   }, 120_000)
 
+  it('bundles files loaded with require() into the chunk that requires them', async () => {
+    writePackage('cos-fixture-cjs', {
+      'package.json': '{"name":"cos-fixture-cjs","main":"index.js"}',
+      'index.js': 'const other = require("./other.js")\nmodule.exports = { value: other.x + 1 }\n',
+      'other.js': 'exports.x = 41\n',
+    })
+    const app = await buildApp(
+      'import cjs from "cos-fixture-cjs"\ndocument.title = String(cjs.value)\n',
+      ['cos-fixture-cjs'],
+      [],
+    )
+    const [chunk, ...rest] = app.cosChunks()
+    expect(rest).toEqual([])
+    const { default: cjs } = await import(/* @vite-ignore */ `data:text/javascript,${encodeURIComponent(app.read(chunk!))}`)
+    expect(cjs.value).toBe(42)
+  }, 120_000)
+
   it('inlines the stand-in for a browser field\'s false', async () => {
     const entry = writePackage('cos-fixture-browser-false', {
       'package.json': '{"name":"cos-fixture-browser-false","type":"module","main":"index.js","browser":{"path":false}}',
