@@ -375,10 +375,13 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
             treeshake: false,
             plugins: [{
               name: 'cos-externalise-deps',
-              transform(source, id) {
-                const rewritten = rewriteAssetUrls(source, id)
-                rewritten.assets.forEach(file => assets.add(file))
-                return rewritten.assets.length ? { code: rewritten.code } : null
+              transform: {
+                filter: { moduleType: ['js'], code: 'import.meta.url' },
+                handler(source, id) {
+                  const rewritten = rewriteAssetUrls(source, id)
+                  rewritten.assets.forEach(file => assets.add(file))
+                  return rewritten.assets.length ? { code: rewritten.code } : null
+                },
               },
               async resolveId(id, importer) {
                 if (!importer) {

@@ -292,6 +292,23 @@ describe('cosPlugin with package-internal imports', () => {
     expect(app.html()).toContain(`"assets":{"cos1:${hash}":{"file":"${hash}.wasm"`)
   }, 120_000)
 
+  it('bundles JSON and TypeScript modules of a managed package', async () => {
+    const entry = writePackage('cos-fixture-json', {
+      'package.json': '{"name":"cos-fixture-json","type":"module","main":"index.js"}',
+      'index.js': 'import data from "./data.json"\nimport { offset } from "./offset.ts"\nexport const value = data.value + offset\n',
+      'data.json': '{"value":41}',
+      'offset.ts': 'export const offset: number = 1\n',
+    })
+    const app = await buildApp(
+      'import { value } from "cos-fixture-json"\ndocument.title = String(value)\n',
+      ['cos-fixture-json'],
+      [{ find: /^cos-fixture-json$/, replacement: entry }],
+    )
+    const chunks = app.cosChunks().map(f => app.read(f)).join('\n')
+    expect(chunks).toContain('41')
+    expect(chunks).not.toContain(': number')
+  }, 120_000)
+
   it('inlines the stand-in for a browser field\'s false', async () => {
     const entry = writePackage('cos-fixture-browser-false', {
       'package.json': '{"name":"cos-fixture-browser-false","type":"module","main":"index.js","browser":{"path":false}}',
