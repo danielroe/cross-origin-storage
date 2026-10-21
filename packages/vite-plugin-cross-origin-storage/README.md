@@ -13,7 +13,7 @@ At build time, for each package matched by `packages`:
 
 1. The package is externalised from the app graph and re-bundled on its own with `rolldown`, **preserving every export** (no tree-shaking). This makes a chunk's bytes depend only on the package, never on which parts of it the app happened to import, so it is identical across sites.
 2. Its dependencies are discovered and bundled too, recursively, so managing one package implicitly manages its whole import subgraph (e.g. `vue` pulls in `@vue/*`). Shared dependencies become their own chunks rather than being duplicated, which also preserves singletons like `@vue/reactivity`.
-3. Chunks are hashed **bottom-up**: each chunk imports its dependencies by their content hash (`cos1:<sha256>`), so a chunk can only be hashed once its dependencies are. The result is purely a function of the source plus a pinned build recipe.
+3. Chunks are hashed **bottom-up**: each chunk imports its dependencies by their content hash (`cos1:<sha256>`), so a chunk can only be hashed once its dependencies are. Modules in an import cycle are hashed as a group and import each other as `cos1:<sha256>-<n>`. The result is purely a function of the source plus a pinned build recipe.
 4. A runtime loader is injected. It looks each managed chunk up in COS by hash, falling back to the network and storing the fetched chunk for next time, then wires everything together through an import map.
 
 The `cos1:` prefix is a **recipe version**. Chunks are only byte-identical across builds that use the same recipe (the same `rolldown` version and options); the prefix is bumped when the recipe changes so chunks built under different recipes can never collide on the same hash.

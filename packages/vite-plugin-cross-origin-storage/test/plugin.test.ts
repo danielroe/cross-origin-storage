@@ -212,7 +212,7 @@ describe('cosPlugin specifier rewriting', () => {
   }, 120_000)
 })
 
-describe('cosPlugin with packages that do not split per file', () => {
+describe('cosPlugin with package-internal imports', () => {
   // Written into the scratch tree's own node_modules, so ids carry the
   // `/node_modules/<name>/` segment the plugin keys packages by.
   function writePackage(name: string, files: Record<string, string>): string {
@@ -224,7 +224,7 @@ describe('cosPlugin with packages that do not split per file', () => {
     return join(dir, 'index.js')
   }
 
-  it('bundles a package with an internal import cycle into one chunk', async () => {
+  it('hashes an internal import cycle as a group', async () => {
     const entry = writePackage('cos-fixture-cycle', {
       'package.json': '{"name":"cos-fixture-cycle","type":"module","main":"index.js"}',
       'index.js': 'export { a } from "./a.js"\n',
@@ -236,7 +236,36 @@ describe('cosPlugin with packages that do not split per file', () => {
       ['cos-fixture-cycle'],
       [{ find: /^cos-fixture-cycle$/, replacement: entry }],
     )
-    expect(app.cosChunks()).toHaveLength(1)
+    expect(app.cosChunks()).toHaveLength(3)
+    for (const file of app.cosChunks()) {
+      const hash = createHash('sha256').update(readFileSync(join(app.assetsDir, file))).digest('hex')
+      expect(hash).toBe(file.replace('.js', ''))
+    }
+    // `a.js` and `b.js` are imported, also by each other, by their group's
+    // specifiers.
+    const imported = [...new Set(app.cosChunks().flatMap(f => app.specifiersOf(f)))].sort()
+    expect(imported).toHaveLength(2)
+    const group = imported[0]!.replace(/-0$/, '')
+    expect(group).toMatch(/^cos1:[a-f0-9]{64}$/)
+    expect(imported).toEqual([`${group}-0`, `${group}-1`])
+  }, 120_000)
+
+  it('keeps one copy of a module that several entry points of its package import', async () => {
+    // Shaped like `three`: `three/addons/*` import `three` by name, and `three`
+    // and `three/webgpu` both import `./three.core.js`.
+    writePackage('cos-fixture-entries', {
+      'package.json': '{"name":"cos-fixture-entries","type":"module","exports":{".":"./index.js","./alt":"./alt.js","./addon":"./addon.js"}}',
+      'index.js': 'export * from "./core.js"\n',
+      'alt.js': 'export * from "./core.js"\nexport const alt = 1\n',
+      'core.js': 'export const core = "the-one-core"\n',
+      'addon.js': 'import { core } from "cos-fixture-entries"\nexport const addon = () => core\n',
+    })
+    const app = await buildApp(
+      'import { core } from "cos-fixture-entries"\nimport { alt } from "cos-fixture-entries/alt"\nimport { addon } from "cos-fixture-entries/addon"\ndocument.title = core + alt + addon()\n',
+      [/^cos-fixture-entries(?:\/|$)/],
+      [],
+    )
+    expect(app.cosChunks().filter(f => app.read(f).includes('the-one-core'))).toHaveLength(1)
   }, 120_000)
 
   it('inlines the stand-in for a browser field\'s false', async () => {

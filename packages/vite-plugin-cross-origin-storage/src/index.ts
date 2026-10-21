@@ -77,13 +77,60 @@ function packageNameFromId(id: string): string | undefined {
   return first.startsWith('@') && second ? `${first}/${second}` : first
 }
 
-/** The directory a resolved module id's package lives in. */
-function packageRootFromId(id: string): string | undefined {
-  const name = packageNameFromId(id)
-  if (!name) {
-    return undefined
+/**
+ * The part of a resolved module id that starts at its package name
+ * (`vue/dist/vue.js`), which is the same on every machine and under every
+ * package manager's `node_modules` layout.
+ */
+function packagePathFromId(id: string): string {
+  const marker = '/node_modules/'
+  const index = id.lastIndexOf(marker)
+  return index === -1 ? id : id.slice(index + marker.length)
+}
+
+/**
+ * Tarjan's strongly connected components, emitted dependencies first: every
+ * component comes after all the components it imports from.
+ */
+function stronglyConnectedComponents(ids: string[], depsOf: (id: string) => string[]): string[][] {
+  const index = new Map<string, number>()
+  const lowLink = new Map<string, number>()
+  const stack: string[] = []
+  const onStack = new Set<string>()
+  const components: string[][] = []
+
+  const connect = (id: string): void => {
+    index.set(id, index.size)
+    lowLink.set(id, index.get(id)!)
+    stack.push(id)
+    onStack.add(id)
+    for (const dep of depsOf(id)) {
+      if (!index.has(dep)) {
+        connect(dep)
+        lowLink.set(id, Math.min(lowLink.get(id)!, lowLink.get(dep)!))
+      }
+      else if (onStack.has(dep)) {
+        lowLink.set(id, Math.min(lowLink.get(id)!, index.get(dep)!))
+      }
+    }
+    if (lowLink.get(id) === index.get(id)) {
+      const component: string[] = []
+      let member: string
+      do {
+        member = stack.pop()!
+        onStack.delete(member)
+        component.push(member)
+      } while (member !== id)
+      components.push(component)
+    }
   }
-  return id.slice(0, id.lastIndexOf('/node_modules/') + '/node_modules/'.length + name.length)
+
+  for (const id of ids) {
+    if (!index.has(id)) {
+      connect(id)
+    }
+  }
+  return components
 }
 
 function toMatchers(packages: Array<string | RegExp>): RegExp[] {
@@ -269,13 +316,9 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
                 if (dep.id.startsWith('\0')) {
                   return null
                 }
-                // Files of the same package are bundled into its chunk. Split
-                // per file, a package's internal import cycles would become
-                // cycles between chunks, which bottom-up hashing cannot order.
-                const root = packageRootFromId(dep.id)
-                if (root && root === packageRootFromId(importer)) {
-                  return null
-                }
+                // Every file is a chunk of its own, even within one package, so
+                // a module that several entry points share (`three` and
+                // `three/webgpu` both import `three.core.js`) exists once.
                 deps.add(dep.id)
                 // Externalise under a synthetic specifier keyed by the resolved
                 // id, so the emitted import is a literal token we rewrite later.
@@ -310,45 +353,55 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
 
       // Hash bottom-up: a chunk's specifier for a dependency is that
       // dependency's content hash, so a chunk can only be hashed once all of
-      // its dependencies have been. The npm graph for these packages is a DAG.
-      const hashes = new Map<string, string>()
+      // its dependencies have been. Modules in an import cycle cannot wait for
+      // each other, so a cycle is hashed as a group: its members import each
+      // other as `cos1:<group hash>-<n>`, and each is still stored under its
+      // own content hash.
+      const specifiers = new Map<string, string>()
       const managed: CosManifest['chunks'] = {}
 
-      const visit = (id: string, stack: string[]): string => {
-        const existing = hashes.get(id)
-        if (existing) {
-          return existing
-        }
-        if (stack.includes(id)) {
-          throw new Error(`[cos] dependency cycle between managed packages: ${[...stack, id].join(' -> ')}`)
-        }
-
+      // Standalone cos chunks have no downstream sourcemap, so none is kept.
+      const rewriteDeps = (id: string, specifierOf: (dep: string) => string): string => {
         const { code, deps } = raw.get(id)!
-        // Resolve each dep's hash first (bottom-up), then rewrite in one pass.
-        const rewrites = new Map<string, string>()
-        for (const dep of deps) {
-          rewrites.set(`cos-dep:${dep}`, contentSpecifier(visit(dep, [...stack, id])))
-        }
-        // Standalone cos chunks have no downstream sourcemap, so none is kept.
-        const { code: resolved } = rewriteSpecifiers(code, rewrites, '', false)
-
-        const hash = createHash('sha256').update(resolved).digest('hex')
-        const fileName = `${assetPrefix}${hash}.js`
-        hashes.set(id, hash)
-        managed[contentSpecifier(hash)] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
-        this.emitFile({ type: 'asset', fileName, source: resolved })
-        return hash
+        const rewrites = new Map(deps.map(dep => [`cos-dep:${dep}`, specifierOf(dep)]))
+        return rewriteSpecifiers(code, rewrites, '', false).code
       }
 
-      for (const id of raw.keys()) {
-        visit(id, [])
+      const emit = (id: string, code: string, specifier?: string): void => {
+        const hash = createHash('sha256').update(code).digest('hex')
+        specifiers.set(id, specifier ?? contentSpecifier(hash))
+        managed[specifiers.get(id)!] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
+        this.emitFile({ type: 'asset', fileName: `${assetPrefix}${hash}.js`, source: code })
+      }
+
+      for (const component of stronglyConnectedComponents([...raw.keys()], id => raw.get(id)!.deps)) {
+        if (component.length === 1 && !raw.get(component[0]!)!.deps.includes(component[0]!)) {
+          emit(component[0]!, rewriteDeps(component[0]!, dep => specifiers.get(dep)!))
+          continue
+        }
+
+        // Order the members by their path within their package, so the group
+        // hash and each member's number are the same on every machine.
+        const members = component
+          .map(id => [packagePathFromId(id), id] as const)
+          .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+          .map(([, id]) => id)
+        const placeholders = new Map(members.map((id, n) => [id, `cos-cycle:${n}`]))
+        const drafts = members.map(id => rewriteDeps(id, dep => specifiers.get(dep) ?? placeholders.get(dep)!))
+        const group = createHash('sha256')
+          .update(JSON.stringify(members.map((id, n) => [packagePathFromId(id), drafts[n]])))
+          .digest('hex')
+        const memberSpecifiers = new Map(members.map((_, n) => [`cos-cycle:${n}`, `${contentSpecifier(group)}-${n}`]))
+        members.forEach((id, n) => {
+          emit(id, rewriteSpecifiers(drafts[n]!, memberSpecifiers, '', false).code, `${contentSpecifier(group)}-${n}`)
+        })
       }
 
       // App chunks only reference the packages the app imported directly,
       // externalised as `cos-ext:<id>` by this plugin's `resolveId`.
       const appRewrites = new Map<string, string>()
       for (const id of collected) {
-        appRewrites.set(`cos-ext:${id}`, contentSpecifier(hashes.get(id)!))
+        appRewrites.set(`cos-ext:${id}`, specifiers.get(id)!)
       }
 
       let entry: CosManifest['entry'] | undefined
