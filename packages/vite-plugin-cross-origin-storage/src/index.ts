@@ -157,6 +157,8 @@ interface SourceLiteral {
   end: number
 }
 
+type ScriptLang = 'js' | 'jsx' | 'ts' | 'tsx'
+
 function isImportMeta(node: unknown): boolean {
   const meta = node as { type?: string, meta?: { name?: string }, property?: { name?: string } } | undefined
   return meta?.type === 'MetaProperty' && meta.meta?.name === 'import' && meta.property?.name === 'meta'
@@ -192,7 +194,7 @@ function stringLiteral(node: unknown): SourceLiteral | undefined {
  * it comes out of COS, and a relative path cannot be resolved against one; the
  * import map resolves the asset specifier instead.
  */
-function rewriteAssetUrls(code: string, id: string): { code: string, assets: string[] } {
+function rewriteAssetUrls(code: string, id: string, lang: ScriptLang): { code: string, assets: string[] } {
   const magic = new MagicString(code)
   const assets: string[] = []
   const visit = (node: unknown): void => {
@@ -227,7 +229,7 @@ function rewriteAssetUrls(code: string, id: string): { code: string, assets: str
       }
     }
   }
-  visit(parseAst(code))
+  visit(parseAst(code, { lang }))
   return { code: assets.length ? magic.toString() : code, assets }
 }
 
@@ -375,9 +377,9 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
             plugins: [{
               name: 'cos-externalise-deps',
               transform: {
-                filter: { moduleType: ['js'], code: 'import.meta.url' },
-                handler(source, id) {
-                  const rewritten = rewriteAssetUrls(source, id)
+                filter: { moduleType: ['js', 'jsx', 'ts', 'tsx'], code: 'import.meta.url' },
+                handler(source, id, meta) {
+                  const rewritten = rewriteAssetUrls(source, id, meta.moduleType as ScriptLang)
                   rewritten.assets.forEach(file => assets.add(file))
                   return rewritten.assets.length ? { code: rewritten.code } : null
                 },

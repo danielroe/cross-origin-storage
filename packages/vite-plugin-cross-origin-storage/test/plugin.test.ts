@@ -312,6 +312,27 @@ describe('cosPlugin with package-internal imports', () => {
     expect(chunks).not.toContain(': number')
   }, 120_000)
 
+  it('emits files referenced from a TypeScript module', async () => {
+    const decoder = 'ts-decoder-bytes'
+    const entry = writePackage('cos-fixture-ts-asset', {
+      'package.json': '{"name":"cos-fixture-ts-asset","type":"module","main":"index.js"}',
+      'index.js': 'export { url } from "./decoder.ts"\n',
+      'decoder.ts': 'export const url: string = new URL("./decoder.wasm", import.meta.url).href\n',
+      'decoder.wasm': decoder,
+    })
+    const app = await buildApp(
+      'import { url } from "cos-fixture-ts-asset"\ndocument.title = url\n',
+      ['cos-fixture-ts-asset'],
+      [{ find: /^cos-fixture-ts-asset$/, replacement: entry }],
+    )
+    const hash = createHash('sha256').update(decoder).digest('hex')
+    expect(readFileSync(join(app.assetsDir, `${hash}.wasm`), 'utf8')).toBe(decoder)
+
+    const chunk = app.cosChunks().map(f => app.read(f)).join('\n')
+    expect(chunk).toMatch(new RegExp(`import\\.meta\\.resolve\\(["'\`]cos1:${hash}["'\`]\\)`))
+    expect(app.html()).toContain(`"assets":{"cos1:${hash}":{"file":"${hash}.wasm"`)
+  }, 120_000)
+
   it('inlines the stand-in for a browser field\'s false', async () => {
     const entry = writePackage('cos-fixture-browser-false', {
       'package.json': '{"name":"cos-fixture-browser-false","type":"module","main":"index.js","browser":{"path":false}}',
