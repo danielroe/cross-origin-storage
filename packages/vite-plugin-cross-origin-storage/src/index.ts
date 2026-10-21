@@ -435,10 +435,13 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
       for (const file of new Set([...raw.values()].flatMap(r => r.assets))) {
         const source = readFileSync(file)
         const hash = createHash('sha256').update(source).digest('hex')
-        const fileName = `${hash}${extname(file)}`
-        assetSpecifiers.set(`cos-asset:${file}`, contentSpecifier(hash))
-        assets[contentSpecifier(hash)] = { file: fileName, hash, name: packageNameFromId(file) }
-        this.emitFile({ type: 'asset', fileName: `${assetPrefix}${fileName}`, source })
+        const specifier = contentSpecifier(hash)
+        assetSpecifiers.set(`cos-asset:${file}`, specifier)
+        if (!assets[specifier]) {
+          const fileName = `${hash}${extname(file)}`
+          assets[specifier] = { file: fileName, hash, name: packageNameFromId(file) }
+          this.emitFile({ type: 'asset', fileName: `${assetPrefix}${fileName}`, source })
+        }
       }
 
       // Hash bottom-up: a chunk's specifier for a dependency is that

@@ -505,6 +505,25 @@ describe('cosPlugin under Vite 7 (rollup)', () => {
     expect(warnings).toEqual([])
   }, 120_000)
 
+  it('emits a file referenced from two paths with identical bytes once', async () => {
+    writePackage('cos-fixture-twin-assets', {
+      'package.json': '{"name":"cos-fixture-twin-assets","type":"module","main":"index.js"}',
+      'index.js': 'export const a = new URL("./a.wasm", import.meta.url).href\nexport const b = new URL("./b.wasm", import.meta.url).href\n',
+      'a.wasm': 'decoder-bytes',
+      'b.wasm': 'decoder-bytes',
+    })
+    const warnings: string[] = []
+    const app = await buildApp(
+      'import { a, b } from "cos-fixture-twin-assets"\ndocument.title = a + b\n',
+      ['cos-fixture-twin-assets'],
+      [],
+      { build: build7 as unknown as BuildFn, warnings },
+    )
+    const hash = createHash('sha256').update('decoder-bytes').digest('hex')
+    expect(readdirSync(app.assetsDir).filter(f => f.endsWith('.wasm'))).toEqual([`${hash}.wasm`])
+    expect(warnings).toEqual([])
+  }, 120_000)
+
   it('writes content-addressed chunks to disk', () => {
     expect(app.cosChunks().length).toBeGreaterThanOrEqual(1)
     for (const file of app.cosChunks()) {
