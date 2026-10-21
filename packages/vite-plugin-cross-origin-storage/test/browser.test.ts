@@ -109,6 +109,66 @@ describe('browser (relative base, served from a sub-path)', () => {
   })
 })
 
+describe('browser (file referenced through `new URL(…, import.meta.url)`)', () => {
+  let root: string
+  let server: { origin: string, close: () => Promise<void> }
+
+  beforeAll(async () => {
+    const pkg = join(scratchRoot, 'node_modules', 'cos-fixture-asset')
+    mkdirSync(join(pkg, 'libs'), { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), '{"name":"cos-fixture-asset","type":"module","main":"index.js"}')
+    writeFileSync(join(pkg, 'index.js'), 'export const url = new URL("./libs/decoder.txt", import.meta.url).href\n')
+    writeFileSync(join(pkg, 'libs/decoder.txt'), 'decoded')
+
+    root = mkdtempSync(join(scratchRoot, 'app-'))
+    mkdirSync(join(root, 'src'), { recursive: true })
+    writeFileSync(
+      join(root, 'index.html'),
+      '<!doctype html><html><head></head><body><p id="app">pending</p>'
+      + '<script type="module" src="/src/main.js"></script></body></html>',
+    )
+    writeFileSync(
+      join(root, 'src/main.js'),
+      'import { url } from "cos-fixture-asset"\n'
+      + 'fetch(url).then(r => r.text()).then(text => { document.querySelector("#app").textContent = text })\n',
+    )
+
+    const { cosPlugin } = await import('../src/index')
+    await build({
+      root,
+      base: './',
+      logLevel: 'error',
+      resolve: { alias: { 'cos-fixture-asset': join(pkg, 'index.js') } },
+      plugins: [cosPlugin({ packages: ['cos-fixture-asset'] })],
+      build: { outDir: join(root, 'dist'), emptyOutDir: true },
+    })
+    server = await serve(root)
+  }, 120_000)
+
+  afterAll(async () => {
+    await server?.close()
+    rmSync(scratchRoot, { recursive: true, force: true })
+  })
+
+  it('resolves the file from a managed chunk and fetches it from the network', async () => {
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      const errors: string[] = []
+      page.on('pageerror', error => errors.push(error.message))
+      page.on('console', msg => msg.type() === 'error' && errors.push(msg.text()))
+
+      await page.goto(`${server.origin}/dist/index.html`, { waitUntil: 'networkidle' })
+      await page.locator('#app', { hasText: 'decoded' }).waitFor({ timeout: 5000 })
+
+      expect(errors, `errors: ${errors.join(', ')}`).toEqual([])
+    }
+    finally {
+      await browser.close()
+    }
+  })
+})
+
 describe('browser (pure vite build)', () => {
   let outDir: string
   let server: { origin: string, close: () => Promise<void> }

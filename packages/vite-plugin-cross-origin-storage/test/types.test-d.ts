@@ -42,6 +42,7 @@ describe('CosManifest', () => {
       base: string
       entry: { specifier: string, file: string }
       chunks: Record<string, { file: string, hash: string, name?: string }>
+      assets?: Record<string, { file: string, hash: string, name?: string }>
     }>()
   })
 })

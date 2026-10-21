@@ -115,6 +115,10 @@ describe('cosPlugin with vue', () => {
   it('derives the base path from the vite config', () => {
     expect(app.html()).toMatch(/"base":"\/assets\/"/)
   })
+
+  it('leaves `assets` out of the manifest when no file is referenced', () => {
+    expect(app.html()).not.toContain('"assets"')
+  })
 })
 
 describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {
@@ -266,6 +270,67 @@ describe('cosPlugin with package-internal imports', () => {
       [],
     )
     expect(app.cosChunks().filter(f => app.read(f).includes('the-one-core'))).toHaveLength(1)
+  }, 120_000)
+
+  it('emits files referenced through `new URL(…, import.meta.url)` under their content hash', async () => {
+    const decoder = 'decoder-bytes'
+    const entry = writePackage('cos-fixture-asset', {
+      'package.json': '{"name":"cos-fixture-asset","type":"module","main":"index.js"}',
+      'index.js': 'export const local = new URL("./decoder.wasm", import.meta.url).href\nexport const remote = new URL("https://example.com/decoder.wasm", import.meta.url).href\n',
+      'decoder.wasm': decoder,
+    })
+    const app = await buildApp(
+      'import { local, remote } from "cos-fixture-asset"\ndocument.title = local + remote\n',
+      ['cos-fixture-asset'],
+      [{ find: /^cos-fixture-asset$/, replacement: entry }],
+    )
+    const hash = createHash('sha256').update(decoder).digest('hex')
+    expect(readFileSync(join(app.assetsDir, `${hash}.wasm`), 'utf8')).toBe(decoder)
+
+    const chunk = app.cosChunks().map(f => app.read(f)).join('\n')
+    expect(chunk).toMatch(new RegExp(`import\\.meta\\.resolve\\(["'\`]cos1:${hash}["'\`]\\)`))
+    expect(chunk).not.toContain('cos-asset:')
+    expect(chunk).not.toContain(scratchRoot)
+    expect(chunk).toContain('https://example.com/decoder.wasm')
+    expect(app.html()).toContain(`"assets":{"cos1:${hash}":{"file":"${hash}.wasm"`)
+  }, 120_000)
+
+  it('bundles JSON and TypeScript modules of a managed package', async () => {
+    const entry = writePackage('cos-fixture-json', {
+      'package.json': '{"name":"cos-fixture-json","type":"module","main":"index.js"}',
+      'index.js': 'import data from "./data.json"\nimport { offset } from "./offset.ts"\nexport const value = data.value + offset\n',
+      'data.json': '{"value":41}',
+      'offset.ts': 'export const offset: number = 1\n',
+    })
+    const app = await buildApp(
+      'import { value } from "cos-fixture-json"\ndocument.title = String(value)\n',
+      ['cos-fixture-json'],
+      [{ find: /^cos-fixture-json$/, replacement: entry }],
+    )
+    const chunks = app.cosChunks().map(f => app.read(f)).join('\n')
+    expect(chunks).toContain('41')
+    expect(chunks).not.toContain(': number')
+  }, 120_000)
+
+  it('emits files referenced from a TypeScript module', async () => {
+    const decoder = 'ts-decoder-bytes'
+    const entry = writePackage('cos-fixture-ts-asset', {
+      'package.json': '{"name":"cos-fixture-ts-asset","type":"module","main":"index.js"}',
+      'index.js': 'export { url } from "./decoder.ts"\n',
+      'decoder.ts': 'export const url: string = new URL("./decoder.wasm", import.meta.url).href\n',
+      'decoder.wasm': decoder,
+    })
+    const app = await buildApp(
+      'import { url } from "cos-fixture-ts-asset"\ndocument.title = url\n',
+      ['cos-fixture-ts-asset'],
+      [{ find: /^cos-fixture-ts-asset$/, replacement: entry }],
+    )
+    const hash = createHash('sha256').update(decoder).digest('hex')
+    expect(readFileSync(join(app.assetsDir, `${hash}.wasm`), 'utf8')).toBe(decoder)
+
+    const chunk = app.cosChunks().map(f => app.read(f)).join('\n')
+    expect(chunk).toMatch(new RegExp(`import\\.meta\\.resolve\\(["'\`]cos1:${hash}["'\`]\\)`))
+    expect(app.html()).toContain(`"assets":{"cos1:${hash}":{"file":"${hash}.wasm"`)
   }, 120_000)
 
   it('inlines the stand-in for a browser field\'s false', async () => {
