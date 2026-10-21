@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, extname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import MagicString from 'magic-string'
 import { rolldown } from 'rolldown'
@@ -156,6 +157,81 @@ interface SourceLiteral {
   end: number
 }
 
+function isImportMeta(node: unknown): boolean {
+  const meta = node as { type?: string, meta?: { name?: string }, property?: { name?: string } } | undefined
+  return meta?.type === 'MetaProperty' && meta.meta?.name === 'import' && meta.property?.name === 'meta'
+}
+
+/** A string literal, or a template literal without expressions, with its position. */
+function stringLiteral(node: unknown): SourceLiteral | undefined {
+  const literal = node as {
+    type?: string
+    value?: unknown
+    start?: number
+    end?: number
+    expressions?: unknown[]
+    quasis?: Array<{ value?: { cooked?: unknown } }>
+  } | undefined
+  if (typeof literal?.start !== 'number' || typeof literal.end !== 'number') {
+    return undefined
+  }
+  if (literal.type === 'Literal' && typeof literal.value === 'string') {
+    return { value: literal.value, start: literal.start, end: literal.end }
+  }
+  if (literal.type === 'TemplateLiteral' && literal.expressions?.length === 0
+    && literal.quasis?.length === 1 && typeof literal.quasis[0]?.value?.cooked === 'string') {
+    return { value: literal.quasis[0].value.cooked, start: literal.start, end: literal.end }
+  }
+  return undefined
+}
+
+/**
+ * Rewrite each `new URL('<relative path>', import.meta.url)` in a managed
+ * module's source to `new URL(import.meta.resolve('cos-asset:<file>'))`, and
+ * return the files it references. A managed chunk runs from a `blob:` URL when
+ * it comes out of COS, and a relative path cannot be resolved against one; the
+ * import map resolves the asset specifier instead. `three`'s `DRACOLoader` and
+ * `KTX2Loader` locate their decoders this way.
+ */
+function rewriteAssetUrls(code: string, id: string): { code: string, assets: string[] } {
+  const magic = new MagicString(code)
+  const assets: string[] = []
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== 'object') {
+      return
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        visit(child)
+      }
+      return
+    }
+    const record = node as Record<string, unknown> & { type?: string, start?: number, end?: number }
+    const args = record.arguments as Array<Record<string, unknown>> | undefined
+    if (record.type === 'NewExpression' && (record.callee as { name?: string })?.name === 'URL'
+      && args?.length === 2 && isImportMeta(args[1]?.object)
+      && (args[1]?.property as { name?: string })?.name === 'url') {
+      const path = stringLiteral(args[0])?.value
+      // Absolute URLs resolve without a base, so only relative paths need help.
+      if (path && !/^(?:[a-z][a-z\d+.-]*:|\/)/i.test(path)) {
+        const file = resolve(dirname(id), path)
+        if (existsSync(file) && statSync(file).isFile()) {
+          assets.push(file)
+          magic.overwrite(record.start!, record.end!, `new URL(import.meta.resolve(${JSON.stringify(`cos-asset:${file}`)}))`)
+          return
+        }
+      }
+    }
+    for (const key in record) {
+      if (key !== 'type') {
+        visit(record[key])
+      }
+    }
+  }
+  visit(parseAst(code))
+  return { code: assets.length ? magic.toString() : code, assets }
+}
+
 /** Collect every static and dynamic import/export source string literal. */
 function collectImportSources(code: string): SourceLiteral[] {
   const sources: SourceLiteral[] = []
@@ -172,22 +248,17 @@ function collectImportSources(code: string): SourceLiteral[] {
     const record = node as Record<string, unknown> & { type?: string }
     if (record.type === 'ImportDeclaration' || record.type === 'ExportNamedDeclaration'
       || record.type === 'ExportAllDeclaration' || record.type === 'ImportExpression') {
-      const source = record.source as {
-        type?: string
-        value?: unknown
-        start?: number
-        end?: number
-        expressions?: unknown[]
-        quasis?: Array<{ value?: { cooked?: unknown } }>
-      } | undefined
-      if (source?.type === 'Literal' && typeof source.value === 'string'
-        && typeof source.start === 'number' && typeof source.end === 'number') {
-        sources.push({ value: source.value, start: source.start, end: source.end })
+      const source = stringLiteral(record.source)
+      if (source) {
+        sources.push(source)
       }
-      else if (source?.type === 'TemplateLiteral' && source.expressions?.length === 0
-        && source.quasis?.length === 1 && typeof source.quasis[0]?.value?.cooked === 'string'
-        && typeof source.start === 'number' && typeof source.end === 'number') {
-        sources.push({ value: source.quasis[0].value.cooked, start: source.start, end: source.end })
+    }
+    // `import.meta.resolve()` takes a specifier too; asset references use it.
+    if (record.type === 'CallExpression' && isImportMeta((record.callee as Record<string, unknown>)?.object)
+      && (record.callee as { property?: { name?: string } }).property?.name === 'resolve') {
+      const literal = stringLiteral((record.arguments as unknown[])?.[0])
+      if (literal) {
+        sources.push(literal)
       }
     }
     for (const key in record) {
@@ -286,7 +357,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
       // queued here, so managing a package implicitly manages its whole import
       // subgraph (e.g. `vue` pulls in `@vue/*`) without the app having to list
       // them. The externalised ids double as the edges between managed chunks.
-      const raw = new Map<string, { code: string, deps: string[] }>()
+      const raw = new Map<string, { code: string, deps: string[], assets: string[] }>()
       const queue = [...collected]
       while (queue.length) {
         const input = queue.shift()!
@@ -295,6 +366,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         }
 
         const deps = new Set<string>()
+        const assets = new Set<string>()
         let code: string
         try {
           const builder = await rolldown({
@@ -303,6 +375,11 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
             treeshake: false,
             plugins: [{
               name: 'cos-externalise-deps',
+              transform(source, id) {
+                const rewritten = rewriteAssetUrls(source, id)
+                rewritten.assets.forEach(file => assets.add(file))
+                return rewritten.assets.length ? { code: rewritten.code } : null
+              },
               async resolveId(id, importer) {
                 if (!importer) {
                   return null
@@ -347,8 +424,23 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
           )
         }
 
-        raw.set(input, { code, deps: [...deps] })
+        raw.set(input, { code, deps: [...deps], assets: [...assets] })
         queue.push(...deps)
+      }
+
+      // Files the managed chunks reference through `new URL(…, import.meta.url)`
+      // are emitted under their content hash. They load from the network only
+      // when the app asks for them, so a decoder the app never uses costs
+      // nothing.
+      const assetSpecifiers = new Map<string, string>()
+      const assets: NonNullable<CosManifest['assets']> = {}
+      for (const file of new Set([...raw.values()].flatMap(r => r.assets))) {
+        const source = readFileSync(file)
+        const hash = createHash('sha256').update(source).digest('hex')
+        const fileName = `${hash}${extname(file)}`
+        assetSpecifiers.set(`cos-asset:${file}`, contentSpecifier(hash))
+        assets[contentSpecifier(hash)] = { file: fileName, hash, name: packageNameFromId(file) }
+        this.emitFile({ type: 'asset', fileName: `${assetPrefix}${fileName}`, source })
       }
 
       // Hash bottom-up: a chunk's specifier for a dependency is that
@@ -362,8 +454,11 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
 
       // Standalone cos chunks have no downstream sourcemap, so none is kept.
       const rewriteDeps = (id: string, specifierOf: (dep: string) => string): string => {
-        const { code, deps } = raw.get(id)!
+        const { code, deps, assets } = raw.get(id)!
         const rewrites = new Map(deps.map(dep => [`cos-dep:${dep}`, specifierOf(dep)]))
+        for (const file of assets) {
+          rewrites.set(`cos-asset:${file}`, assetSpecifiers.get(`cos-asset:${file}`)!)
+        }
         return rewriteSpecifiers(code, rewrites, '', false).code
       }
 
@@ -428,7 +523,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         return
       }
 
-      const manifest: CosManifest = { base, entry, chunks: managed }
+      const manifest: CosManifest = { base, entry, chunks: managed, assets }
       loaderTemplate ??= bundleLoader(loaderEntry)
       scriptContent = (await loaderTemplate).replace(MANIFEST_PLACEHOLDER, JSON.stringify(manifest))
       options.onGenerated?.(scriptContent)

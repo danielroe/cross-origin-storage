@@ -268,6 +268,30 @@ describe('cosPlugin with package-internal imports', () => {
     expect(app.cosChunks().filter(f => app.read(f).includes('the-one-core'))).toHaveLength(1)
   }, 120_000)
 
+  it('emits files referenced through `new URL(…, import.meta.url)` under their content hash', async () => {
+    // Shaped like `three`'s `DRACOLoader`, which locates its decoder this way.
+    const decoder = 'decoder-bytes'
+    const entry = writePackage('cos-fixture-asset', {
+      'package.json': '{"name":"cos-fixture-asset","type":"module","main":"index.js"}',
+      'index.js': 'export const local = new URL("./decoder.wasm", import.meta.url).href\nexport const remote = new URL("https://example.com/decoder.wasm", import.meta.url).href\n',
+      'decoder.wasm': decoder,
+    })
+    const app = await buildApp(
+      'import { local, remote } from "cos-fixture-asset"\ndocument.title = local + remote\n',
+      ['cos-fixture-asset'],
+      [{ find: /^cos-fixture-asset$/, replacement: entry }],
+    )
+    const hash = createHash('sha256').update(decoder).digest('hex')
+    expect(readFileSync(join(app.assetsDir, `${hash}.wasm`), 'utf8')).toBe(decoder)
+
+    const chunk = app.cosChunks().map(f => app.read(f)).join('\n')
+    expect(chunk).toMatch(new RegExp(`import\\.meta\\.resolve\\(["'\`]cos1:${hash}["'\`]\\)`))
+    expect(chunk).not.toContain('cos-asset:')
+    expect(chunk).not.toContain(scratchRoot)
+    expect(chunk).toContain('https://example.com/decoder.wasm')
+    expect(app.html()).toContain(`"assets":{"cos1:${hash}":{"file":"${hash}.wasm"`)
+  }, 120_000)
+
   it('inlines the stand-in for a browser field\'s false', async () => {
     const entry = writePackage('cos-fixture-browser-false', {
       'package.json': '{"name":"cos-fixture-browser-false","type":"module","main":"index.js","browser":{"path":false}}',

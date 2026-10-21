@@ -21,6 +21,12 @@ export interface CosManifest {
    * it could be derived from the resolved module path; absent for chunks it couldn't be.
    */
   chunks: Record<string, { file: string, hash: string, name?: string }>
+  /**
+   * Map of content-addressed specifier to `{ file, hash, name }` for every file a managed chunk
+   * references through `new URL(…, import.meta.url)`, such as a decoder's `.wasm`. The import map
+   * points these at the network, so they load only when the app requests them.
+   */
+  assets?: Record<string, { file: string, hash: string, name?: string }>
 }
 
 export async function runCosLoader(manifest: CosManifest): Promise<void> {
@@ -85,6 +91,9 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
   )
 
   imports[manifest.entry.specifier] = new URL(manifest.base + manifest.entry.file, document.baseURI).href
+  for (const [specifier, { file }] of Object.entries(manifest.assets ?? {})) {
+    imports[specifier] = new URL(manifest.base + file, document.baseURI).href
+  }
 
   const script = document.createElement('script')
   script.type = 'importmap'
