@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync, globSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -13,15 +13,10 @@ type BuildFn = typeof build
 // Build inside the project tree so fixtures resolve packages from the project
 // node_modules rather than a detached temp dir.
 const scratchRoot = fileURLToPath(new URL('./.plugin-scratch', import.meta.url))
-// `.pnpm` lives in the workspace-root node_modules.
-const nodeModules = fileURLToPath(new URL('../../../node_modules', import.meta.url))
+const nodeModules = fileURLToPath(new URL('../node_modules', import.meta.url))
 
-function resolvePkg(glob: string): string {
-  const match = globSync(glob, { cwd: nodeModules })[0]
-  if (!match) {
-    throw new Error(`fixture dependency not found: ${glob}`)
-  }
-  return join(nodeModules, match)
+function resolvePkg(name: string, file: string): string {
+  return join(realpathSync(join(nodeModules, name)), file)
 }
 
 interface Built {
@@ -103,7 +98,7 @@ describe('cosPlugin with vue', () => {
     app = await buildApp(
       'import { ref } from "vue"\ndocument.body.dataset.count = String(ref(0).value)\n',
       [/^(?:vue$|@vue\/)/],
-      [{ find: 'vue', replacement: resolvePkg('.pnpm/vue@*/node_modules/vue/dist/vue.runtime.esm-bundler.js') }],
+      [{ find: 'vue', replacement: resolvePkg('vue', 'dist/vue.runtime.esm-bundler.js') }],
     )
   }, 120_000)
 
@@ -157,8 +152,8 @@ describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {
       'import { createHead } from "unhead/client"\ndocument.title = String(!!createHead)\n',
       ['unhead/client'],
       [
-        { find: /^unhead\/client$/, replacement: resolvePkg('.pnpm/unhead@*/node_modules/unhead/dist/client.mjs') },
-        { find: /^hookable$/, replacement: resolvePkg('.pnpm/hookable@*/node_modules/hookable/dist/index.mjs') },
+        { find: /^unhead\/client$/, replacement: resolvePkg('unhead', 'dist/client.mjs') },
+        { find: /^hookable$/, replacement: resolvePkg('hookable', 'dist/index.mjs') },
       ],
     )
   }, 120_000)
@@ -193,10 +188,7 @@ describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {
 })
 
 describe('cosPlugin specifier rewriting', () => {
-  const vueAlias: Alias[] = [
-    { find: /^vue$/, replacement: '' }, // replaced per-test below
-  ]
-  vueAlias[0]!.replacement = resolvePkg('.pnpm/vue@*/node_modules/vue/dist/vue.runtime.esm-bundler.js')
+  const vueAlias: Alias[] = [{ find: /^vue$/, replacement: resolvePkg('vue', 'dist/vue.runtime.esm-bundler.js') }]
 
   it('does not rewrite a managed specifier that appears in a string literal', async () => {
     // The string "vue" is data here, not an import; AST-based rewriting must
@@ -242,7 +234,7 @@ describe('cosPlugin specifier rewriting', () => {
 
 describe('cosPlugin with package-internal imports', () => {
   it('hashes an internal import cycle as a group', async () => {
-    const entry = writePackage('cos-fixture-cycle', {
+    writePackage('cos-fixture-cycle', {
       'package.json': '{"name":"cos-fixture-cycle","type":"module","main":"index.js"}',
       'index.js': 'export { a } from "./a.js"\n',
       'a.js': 'import { b } from "./b.js"\nexport const a = () => b\n',
@@ -251,15 +243,13 @@ describe('cosPlugin with package-internal imports', () => {
     const app = await buildApp(
       'import { a } from "cos-fixture-cycle"\ndocument.title = String(a)\n',
       ['cos-fixture-cycle'],
-      [{ find: /^cos-fixture-cycle$/, replacement: entry }],
+      [],
     )
     expect(app.cosChunks()).toHaveLength(3)
     for (const file of app.cosChunks()) {
       const hash = createHash('sha256').update(readFileSync(join(app.assetsDir, file))).digest('hex')
       expect(hash).toBe(file.replace('.js', ''))
     }
-    // `a.js` and `b.js` are imported, also by each other, by their group's
-    // specifiers.
     const imported = [...new Set(app.cosChunks().flatMap(f => app.specifiersOf(f)))].sort()
     expect(imported).toHaveLength(2)
     const group = imported[0]!.replace(/-0$/, '')
@@ -310,8 +300,6 @@ describe('cosPlugin with package-internal imports', () => {
   }, 120_000)
 
   it('keeps one copy of a module that several entry points of its package import', async () => {
-    // Shaped like `three`: `three/addons/*` import `three` by name, and `three`
-    // and `three/webgpu` both import `./three.core.js`.
     writePackage('cos-fixture-entries', {
       'package.json': '{"name":"cos-fixture-entries","type":"module","exports":{".":"./index.js","./alt":"./alt.js","./addon":"./addon.js"}}',
       'index.js': 'export * from "./core.js"\n',
@@ -406,14 +394,14 @@ describe('cosPlugin with package-internal imports', () => {
   }, 120_000)
 
   it('inlines the stand-in for a browser field\'s false', async () => {
-    const entry = writePackage('cos-fixture-browser-false', {
+    writePackage('cos-fixture-browser-false', {
       'package.json': '{"name":"cos-fixture-browser-false","type":"module","main":"index.js","browser":{"path":false}}',
       'index.js': 'import path from "path"\nexport const hasPath = () => !!path\n',
     })
     const app = await buildApp(
       'import { hasPath } from "cos-fixture-browser-false"\ndocument.title = String(hasPath)\n',
       ['cos-fixture-browser-false'],
-      [{ find: /^cos-fixture-browser-false$/, replacement: entry }],
+      [],
     )
     expect(app.cosChunks()).toHaveLength(1)
   }, 120_000)
@@ -426,7 +414,7 @@ describe('cosPlugin under Vite 7 (rollup)', () => {
     app = await buildApp(
       'import { ref } from "vue"\ndocument.body.dataset.count = String(ref(0).value)\n',
       [/^(?:vue$|@vue\/)/],
-      [{ find: 'vue', replacement: resolvePkg('.pnpm/vue@*/node_modules/vue/dist/vue.runtime.esm-bundler.js') }],
+      [{ find: 'vue', replacement: resolvePkg('vue', 'dist/vue.runtime.esm-bundler.js') }],
       { build: build7 as unknown as BuildFn },
     )
   }, 120_000)

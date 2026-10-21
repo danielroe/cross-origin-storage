@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { createReadStream, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, globSync } from 'node:fs'
+import { createReadStream, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, globSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,8 +9,7 @@ import type { Server } from 'node:http'
 import type { Page } from 'playwright-core'
 import { assertExtensionRunnable, launchPlainBrowser, launchWithExtension, skipExtensionTest } from './utils/browser'
 
-const nodeModules = fileURLToPath(new URL('../../../node_modules', import.meta.url))
-const vueEntry = join(nodeModules, globSync('.pnpm/vue@*/node_modules/vue/dist/vue.runtime.esm-bundler.js', { cwd: nodeModules })[0]!)
+const vueEntry = join(realpathSync(fileURLToPath(new URL('../node_modules/vue', import.meta.url))), 'dist/vue.runtime.esm-bundler.js')
 const cosChunkPattern = /\/assets\/[a-f0-9]{64}\.js$/
 // Build inside the package tree so the app resolves `vue` and Vite emits the
 // HTML under a relative fileName.
@@ -44,8 +43,14 @@ function serve(dir: string): Promise<{ origin: string, close: () => Promise<void
   })
 }
 
-/** A tiny app whose counter only runs once the whole cos chunk graph has. */
-function writeApp(): string {
+const COUNTER_APP = 'import { ref, watchEffect } from "vue"\n'
+  + 'const count = ref(0)\n'
+  + 'const el = document.querySelector("#app")\n'
+  + 'watchEffect(() => { el.textContent = `count: ${count.value}` })\n'
+  + 'document.querySelector("body").addEventListener("click", () => count.value++)\n'
+
+/** A tiny app whose `main` script only runs once the whole cos chunk graph has. */
+function writeApp(main = COUNTER_APP): string {
   mkdirSync(scratchRoot, { recursive: true })
   const root = mkdtempSync(join(scratchRoot, 'app-'))
   mkdirSync(join(root, 'src'), { recursive: true })
@@ -54,14 +59,7 @@ function writeApp(): string {
     '<!doctype html><html><head></head><body><p id="app">count: pending</p>'
     + '<script type="module" src="/src/main.js"></script></body></html>',
   )
-  writeFileSync(
-    join(root, 'src/main.js'),
-    'import { ref, watchEffect } from "vue"\n'
-    + 'const count = ref(0)\n'
-    + 'const el = document.querySelector("#app")\n'
-    + 'watchEffect(() => { el.textContent = `count: ${count.value}` })\n'
-    + 'document.querySelector("body").addEventListener("click", () => count.value++)\n',
-  )
+  writeFileSync(join(root, 'src/main.js'), main)
   return root
 }
 
@@ -169,12 +167,52 @@ describe('browser (file referenced through `new URL(…, import.meta.url)`)', ()
   })
 })
 
+describe('browser (import cycle)', () => {
+  let server: { origin: string, close: () => Promise<void> }
+
+  beforeAll(async () => {
+    const pkg = join(scratchRoot, 'node_modules', 'cos-fixture-parity')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), '{"name":"cos-fixture-parity","type":"module","main":"index.js"}')
+    writeFileSync(join(pkg, 'index.js'), 'export { isEven } from "./even.js"\n')
+    writeFileSync(join(pkg, 'even.js'), 'import { isOdd } from "./odd.js"\nexport const isEven = n => n === 0 || isOdd(n - 1)\n')
+    writeFileSync(join(pkg, 'odd.js'), 'import { isEven } from "./even.js"\nexport const isOdd = n => n !== 0 && isEven(n - 1)\n')
+    const root = writeApp('import { isEven } from "cos-fixture-parity"\ndocument.querySelector("#app").textContent = `even: ${isEven(10)}`\n')
+
+    const { cosPlugin } = await import('../src/index')
+    await build({
+      root,
+      logLevel: 'error',
+      plugins: [cosPlugin({ packages: ['cos-fixture-parity'] })],
+      build: { outDir: join(root, 'dist'), emptyOutDir: true },
+    })
+    server = await serve(join(root, 'dist'))
+  }, 120_000)
+
+  afterAll(async () => {
+    await server?.close()
+    rmSync(scratchRoot, { recursive: true, force: true })
+  })
+
+  it('runs modules that import each other through their group specifiers', async () => {
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.goto(server.origin, { waitUntil: 'networkidle' })
+      expect(await page.locator('script[type="importmap"]').textContent()).toMatch(/cos1:[a-f0-9]{64}-1/)
+      await page.locator('#app', { hasText: 'even: true' }).waitFor({ timeout: 5000 })
+    }
+    finally {
+      await browser.close()
+    }
+  })
+})
+
 describe('browser (pure vite build)', () => {
   let outDir: string
   let server: { origin: string, close: () => Promise<void> }
 
   beforeAll(async () => {
-    mkdirSync(scratchRoot, { recursive: true })
     const root = writeApp()
     outDir = join(root, 'dist')
 
