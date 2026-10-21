@@ -8,6 +8,10 @@
     {
       "matchDepNames": ["vite7"],
       "allowedVersions": "<8"
+    },
+    {
+      "matchDepNames": ["rolldown"],
+      "dependencyDashboardApproval": true
     }
   ]
 }
