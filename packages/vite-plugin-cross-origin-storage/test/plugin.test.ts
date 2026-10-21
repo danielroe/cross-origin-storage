@@ -138,6 +138,14 @@ describe('cosPlugin with vue', () => {
   it('leaves `assets` out of the manifest when no file is referenced', () => {
     expect(app.html()).not.toContain('"assets"')
   })
+
+  it('records the size of each chunk in the manifest', () => {
+    const sizes = [...app.html().matchAll(/"file":"([a-f0-9]{64}\.js)","hash":"[a-f0-9]{64}",(?:"name":"[^"]*",)?"size":(\d+)/g)]
+    expect(sizes).toHaveLength(app.cosChunks().length)
+    for (const [, file, size] of sizes) {
+      expect(readFileSync(join(app.assetsDir, file!)).length).toBe(Number(size))
+    }
+  })
 })
 
 describe('cosPlugin build recipe', () => {

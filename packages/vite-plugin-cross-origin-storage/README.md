@@ -16,6 +16,8 @@ At build time, for each package matched by `packages`:
 3. Chunks are hashed **bottom-up**: each chunk imports its dependencies by their content hash (`cos1:<sha256>`), so a chunk can only be hashed once its dependencies are. Modules in an import cycle are hashed as a group and import each other as `cos1:<sha256>-<n>`. The result is purely a function of the source plus a pinned build recipe.
 4. A runtime loader is injected. It looks each managed chunk up in COS by hash, falling back to the network and storing the fetched chunk for next time, then wires everything together through an import map.
 
+Browsers can cap how many lookups a site makes for files it did not store itself, so the loader only looks up the 8 largest of those per load and fetches the rest. A chunk found through another site is written back, so later lookups for it are the site's own. Where a permissions policy blocks COS, such as in a cross-origin `<iframe>` without `allow="cross-origin-storage"`, every chunk is loaded from the network.
+
 The `cos1:` prefix is the **specifier format version**. Chunks are only byte-identical across builds that use the same build recipe: the `rolldown` version and options pinned by each release of this plugin. A different recipe produces different bytes, and so different hashes, so its chunks are not shared but never collide.
 
 ## Installation
@@ -79,6 +81,7 @@ The [Cross-Origin Storage API](https://github.com/WICG/cross-origin-storage) is 
 - **Managed packages must be self-contained.** A package whose source imports build-time virtuals (e.g. `#build/*`, `#imports`) cannot be bundled standalone and is rejected with a clear error. It also wouldn't be shareable, since its output would differ per app.
 - **Single-entry builds.** The loader wires up one entry chunk; multi-page builds with several HTML entries are not yet supported.
 - **The app entry is never COS-shared.** It is app-specific and is loaded from the network.
+- **Chunks run from `blob:` URLs.** A Content Security Policy must allow `blob:` in `script-src`.
 - **Referenced files load from the network.** A file that a managed package locates with `new URL('<relative path>', import.meta.url)`, such as a decoder's `.wasm`, is emitted under its content hash and fetched only when the app requests it, so it is not stored in COS. Managed chunks run from `blob:` URLs, so only a literal path to an existing file can be resolved inside one; a computed path, a directory, or a path with a query or hash cannot.
 - **Referenced files are emitted as-is.** A worker started with `new Worker(new URL('./worker.js', import.meta.url))` is copied without bundling, so it must not import other modules.
 - **Determinism is recipe-scoped.** Sharing only happens between builds on the same package version *and* the same build recipe, which in practice means the same release of this plugin.

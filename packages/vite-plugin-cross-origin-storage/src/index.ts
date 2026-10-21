@@ -465,7 +465,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         const hash = createHash('sha256').update(code).digest('hex')
         const key = specifier ?? contentSpecifier(hash)
         specifiers.set(id, key)
-        managed[key] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
+        managed[key] = { file: `${hash}.js`, hash, name: packageNameFromId(id), size: Buffer.byteLength(code) }
         if (!emitted.has(hash)) {
           emitted.add(hash)
           this.emitFile({ type: 'asset', fileName: `${assetPrefix}${hash}.js`, source: code })

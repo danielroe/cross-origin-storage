@@ -208,6 +208,212 @@ describe('browser (import cycle)', () => {
   })
 })
 
+interface StubCosOptions {
+  files?: Record<string, string>
+  deny?: boolean
+  quota?: boolean
+}
+
+/** A `navigator.crossOriginStorage` kept in `sessionStorage`, so it survives reloads. */
+function stubCos({ files: seed = {}, deny, quota }: StubCosOptions): void {
+  const files: Record<string, string> = JSON.parse(sessionStorage.getItem('stub-cos') ?? 'null') ?? seed
+  const calls: Array<{ create: boolean, hash: string }> = []
+  Object.assign(window, { cosCalls: calls })
+  Object.defineProperty(navigator, 'crossOriginStorage', {
+    value: {
+      async getFileHandle({ value }: { value: string }, { create = false } = {}) {
+        calls.push({ create, hash: value })
+        if (deny) {
+          throw new DOMException('Blocked', 'NotAllowedError')
+        }
+        if (!create) {
+          if (!(value in files)) {
+            throw new DOMException('Missing', 'NotFoundError')
+          }
+          return { getFile: async () => new File([files[value]!], value) }
+        }
+        return {
+          async createWritable() {
+            if (quota) {
+              throw new DOMException('Full', 'QuotaExceededError')
+            }
+            const parts: string[] = []
+            return {
+              write: async (blob: Blob) => { parts.push(await blob.text()) },
+              close: async () => {
+                files[value] = parts.join('')
+                sessionStorage.setItem('stub-cos', JSON.stringify(files))
+              },
+            }
+          },
+        }
+      },
+    },
+  })
+}
+
+describe('browser (loader with a stub cos)', () => {
+  let outDir: string
+  let server: { origin: string, close: () => Promise<void> }
+
+  beforeAll(async () => {
+    const pkg = join(scratchRoot, 'node_modules', 'cos-fixture-many')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), '{"name":"cos-fixture-many","type":"module","main":"index.js"}')
+    const modules = Array.from({ length: 12 }, (_, n) => `m${n}`)
+    writeFileSync(join(pkg, 'index.js'), modules.map(m => `export * from "./${m}.js"\n`).join(''))
+    modules.forEach((m, n) => writeFileSync(join(pkg, `${m}.js`), `export const ${m} = "${'x'.repeat(100 * (n + 1))}"\n`))
+    const root = writeApp('import * as many from "cos-fixture-many"\ndocument.querySelector("#app").textContent = `modules: ${Object.keys(many).length}`\n')
+    outDir = join(root, 'dist')
+
+    const { cosPlugin } = await import('../src/index')
+    await build({
+      root,
+      logLevel: 'error',
+      plugins: [cosPlugin({ packages: ['cos-fixture-many'] })],
+      build: { outDir, emptyOutDir: true },
+    })
+    server = await serve(outDir)
+  }, 120_000)
+
+  afterAll(async () => {
+    await server?.close()
+    rmSync(scratchRoot, { recursive: true, force: true })
+  })
+
+  async function load(page: Page, { stored = true } = {}): Promise<{ lookups: string[], creates: string[], fetched: string[], errors: string[] }> {
+    const fetched: string[] = []
+    const errors: string[] = []
+    const onResponse = (res: { url: () => string }): void => {
+      if (cosChunkPattern.test(new URL(res.url()).pathname)) {
+        fetched.push(new URL(res.url()).pathname.slice('/assets/'.length, -'.js'.length))
+      }
+    }
+    const onConsole = (msg: { type: () => string, text: () => string }): void => {
+      if (msg.type() === 'error') {
+        errors.push(msg.text())
+      }
+    }
+    page.on('response', onResponse)
+    page.on('console', onConsole)
+    await page.goto(server.origin, { waitUntil: 'networkidle' })
+    await page.locator('#app', { hasText: 'modules: 12' }).waitFor({ timeout: 5000 })
+    if (stored) {
+      await page.waitForFunction(() => localStorage.getItem('cos:stored') !== null)
+    }
+    page.off('response', onResponse)
+    page.off('console', onConsole)
+    const calls = await page.evaluate(() => (window as unknown as { cosCalls: Array<{ create: boolean, hash: string }> }).cosCalls)
+    return {
+      lookups: calls.filter(call => !call.create).map(call => call.hash),
+      creates: calls.filter(call => call.create).map(call => call.hash),
+      fetched,
+      errors,
+    }
+  }
+
+  function manifestChunks(): Array<{ hash: string, size: number }> {
+    const html = readFileSync(join(outDir, 'index.html'), 'utf8')
+    return [...html.matchAll(/"hash":"([a-f0-9]{64})",(?:"name":"[^"]*",)?"size":(\d+)/g)]
+      .map(([, hash, size]) => ({ hash: hash!, size: Number(size) }))
+  }
+
+  it('looks up only the largest chunks it has not stored, then every chunk it has', async () => {
+    const chunks = manifestChunks()
+    expect(chunks).toHaveLength(13)
+    const largest = [...chunks].sort((a, b) => b.size - a.size).slice(0, 8).map(chunk => chunk.hash)
+
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.addInitScript(stubCos, {})
+
+      const first = await load(page)
+      expect(first.lookups.sort()).toEqual(largest.sort())
+      expect(first.fetched).toHaveLength(13)
+      expect(first.creates).toHaveLength(13)
+      expect(first.errors).toEqual([])
+
+      const second = await load(page)
+      expect(second.lookups).toHaveLength(13)
+      expect(second.fetched).toEqual([])
+      expect(second.creates).toEqual([])
+    }
+    finally {
+      await browser.close()
+    }
+  })
+
+  it('stores chunks found through another site, so later lookups are its own', async () => {
+    const files = Object.fromEntries(manifestChunks().map(({ hash }) => [hash, readFileSync(join(outDir, 'assets', `${hash}.js`), 'utf8')]))
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.addInitScript(stubCos, { files })
+
+      const first = await load(page)
+      expect(first.fetched).toHaveLength(5)
+      expect(first.creates.sort()).toEqual(Object.keys(files).sort())
+
+      const second = await load(page)
+      expect(second.lookups).toHaveLength(13)
+      expect(second.fetched).toEqual([])
+    }
+    finally {
+      await browser.close()
+    }
+  })
+
+  it('keeps the hashes that other builds on the same origin stored', async () => {
+    const other = 'f'.repeat(64)
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.addInitScript(stubCos, {})
+      await load(page)
+      await page.evaluate(other => localStorage.setItem('cos:stored', JSON.stringify([other, ...JSON.parse(localStorage.getItem('cos:stored')!)])), other)
+
+      const second = await load(page)
+      expect(second.lookups).toHaveLength(13)
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cos:stored')!))).toContain(other)
+    }
+    finally {
+      await browser.close()
+    }
+  })
+
+  it('stops using cos once a permissions policy blocks it', async () => {
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.addInitScript(stubCos, { deny: true })
+
+      const { lookups, creates, fetched, errors } = await load(page, { stored: false })
+      expect(lookups.length + creates.length).toBe(1)
+      expect(fetched).toHaveLength(13)
+      expect(errors).toEqual([])
+    }
+    finally {
+      await browser.close()
+    }
+  })
+
+  it('stops storing once the quota is exceeded', async () => {
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.addInitScript(stubCos, { quota: true })
+
+      const { creates, errors } = await load(page, { stored: false })
+      expect(creates).toHaveLength(1)
+      expect(errors).toEqual([])
+    }
+    finally {
+      await browser.close()
+    }
+  })
+})
+
 describe('browser (pure vite build)', () => {
   let outDir: string
   let server: { origin: string, close: () => Promise<void> }
