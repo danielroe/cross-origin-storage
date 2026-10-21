@@ -411,7 +411,12 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
           // the chunk and strips rolldown's `//#region <path>` debug comments,
           // which embed cwd-relative paths and would otherwise make the hash
           // depend on the build location.
-          const { output } = await builder.generate({ file: 'chunk.js', codeSplitting: false, minify: true })
+          const { output } = await builder.generate({
+            file: 'chunk.js',
+            codeSplitting: false,
+            minify: true,
+            comments: { legal: true, annotation: false, jsdoc: false },
+          })
           await builder.close()
           code = output[0].code
         }

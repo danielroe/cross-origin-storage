@@ -130,6 +130,12 @@ describe('cosPlugin with vue', () => {
     expect(html).not.toMatch(/<script type="module"[^>]*src="[^"]*\.js"/)
   })
 
+  it('keeps licence comments but drops annotation comments', () => {
+    const code = app.cosChunks().map(f => app.read(f)).join('\n')
+    expect(code).toContain('@license')
+    expect(code).not.toMatch(/__PURE__|__NO_SIDE_EFFECTS__/)
+  })
+
   it('derives the base path from the vite config', () => {
     expect(app.html()).toMatch(/"base":"\/assets\/"/)
   })
