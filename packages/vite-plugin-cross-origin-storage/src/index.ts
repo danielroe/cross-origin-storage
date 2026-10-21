@@ -449,6 +449,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
       // own content hash.
       const specifiers = new Map<string, string>()
       const managed: CosManifest['chunks'] = {}
+      const emitted = new Set<string>()
 
       // Standalone cos chunks have no downstream sourcemap, so none is kept.
       const rewriteDeps = (id: string, specifierOf: (dep: string) => string): string => {
@@ -465,7 +466,10 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         const key = specifier ?? contentSpecifier(hash)
         specifiers.set(id, key)
         managed[key] = { file: `${hash}.js`, hash, name: packageNameFromId(id) }
-        this.emitFile({ type: 'asset', fileName: `${assetPrefix}${hash}.js`, source: code })
+        if (!emitted.has(hash)) {
+          emitted.add(hash)
+          this.emitFile({ type: 'asset', fileName: `${assetPrefix}${hash}.js`, source: code })
+        }
       }
 
       for (const component of stronglyConnectedComponents([...raw.keys()], id => raw.get(id)!.deps)) {

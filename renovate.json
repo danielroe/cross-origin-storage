@@ -3,5 +3,11 @@
   "prCreation": "immediate",
   "extends": [
     "github>danielroe/renovate"
+  ],
+  "packageRules": [
+    {
+      "matchDepNames": ["vite7"],
+      "allowedVersions": "<8"
+    }
   ]
 }

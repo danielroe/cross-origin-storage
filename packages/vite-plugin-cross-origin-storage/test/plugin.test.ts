@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
-import { build as build8 } from 'vite8'
+import { build as build7 } from 'vite7'
 import { cosPlugin } from '../src/index'
 import type { Alias } from 'vite'
 
@@ -38,7 +38,7 @@ async function buildApp(
   entry: string,
   packages: Array<string | RegExp>,
   alias: Alias[],
-  options: { sourcemap?: boolean, build?: BuildFn } = {},
+  options: { sourcemap?: boolean, build?: BuildFn, warnings?: string[] } = {},
 ): Promise<Built> {
   mkdirSync(scratchRoot, { recursive: true })
   const root = mkdtempSync(join(scratchRoot, 'app-'))
@@ -56,7 +56,15 @@ async function buildApp(
     logLevel: 'error',
     resolve: { alias },
     plugins: [cosPlugin({ packages })],
-    build: { outDir, emptyOutDir: true, sourcemap: options.sourcemap ?? false, rollupOptions: { input: join(root, 'index.html') } },
+    build: {
+      outDir,
+      emptyOutDir: true,
+      sourcemap: options.sourcemap ?? false,
+      rollupOptions: {
+        input: join(root, 'index.html'),
+        onwarn: warning => options.warnings?.push(warning.code ?? warning.message),
+      },
+    },
   })
 
   const read = (file: string): string => readFileSync(join(assetsDir, file), 'utf8')
@@ -72,6 +80,16 @@ async function buildApp(
     specifiersOf: file => specifiers(read(file)),
     html: () => readFileSync(join(outDir, 'index.html'), 'utf8'),
   }
+}
+
+/** Write a package into `parent`, by default the `node_modules` the scratch apps resolve from. */
+function writePackage(name: string, files: Record<string, string>, parent = join(scratchRoot, 'node_modules')): string {
+  const dir = join(parent, name)
+  mkdirSync(dir, { recursive: true })
+  for (const [file, content] of Object.entries(files)) {
+    writeFileSync(join(dir, file), content)
+  }
+  return join(dir, 'index.js')
 }
 
 afterAll(() => {
@@ -217,17 +235,6 @@ describe('cosPlugin specifier rewriting', () => {
 })
 
 describe('cosPlugin with package-internal imports', () => {
-  // Written into the scratch tree's own node_modules, so ids carry the
-  // `/node_modules/<name>/` segment the plugin keys packages by.
-  function writePackage(name: string, files: Record<string, string>, parent = join(scratchRoot, 'node_modules')): string {
-    const dir = join(parent, name)
-    mkdirSync(dir, { recursive: true })
-    for (const [file, content] of Object.entries(files)) {
-      writeFileSync(join(dir, file), content)
-    }
-    return join(dir, 'index.js')
-  }
-
   it('hashes an internal import cycle as a group', async () => {
     const entry = writePackage('cos-fixture-cycle', {
       'package.json': '{"name":"cos-fixture-cycle","type":"module","main":"index.js"}',
@@ -406,7 +413,7 @@ describe('cosPlugin with package-internal imports', () => {
   }, 120_000)
 })
 
-describe('cosPlugin under Vite 8 (rolldown)', () => {
+describe('cosPlugin under Vite 7 (rollup)', () => {
   let app: Built
 
   beforeAll(async () => {
@@ -414,8 +421,26 @@ describe('cosPlugin under Vite 8 (rolldown)', () => {
       'import { ref } from "vue"\ndocument.body.dataset.count = String(ref(0).value)\n',
       [/^(?:vue$|@vue\/)/],
       [{ find: 'vue', replacement: resolvePkg('.pnpm/vue@*/node_modules/vue/dist/vue.runtime.esm-bundler.js') }],
-      { build: build8 as unknown as BuildFn },
+      { build: build7 as unknown as BuildFn },
     )
+  }, 120_000)
+
+  it('emits a chunk shared by modules with identical code once', async () => {
+    writePackage('cos-fixture-twins', {
+      'package.json': '{"name":"cos-fixture-twins","type":"module","main":"index.js"}',
+      'index.js': 'export * as a from "./a.js"\nexport * as b from "./b.js"\n',
+      'a.js': 'export const twin = 1\n',
+      'b.js': 'export const twin = 1\n',
+    })
+    const warnings: string[] = []
+    const twins = await buildApp(
+      'import { a, b } from "cos-fixture-twins"\ndocument.title = String(a.twin + b.twin)\n',
+      ['cos-fixture-twins'],
+      [],
+      { build: build7 as unknown as BuildFn, warnings },
+    )
+    expect(twins.cosChunks()).toHaveLength(2)
+    expect(warnings).toEqual([])
   }, 120_000)
 
   it('writes content-addressed chunks to disk', () => {
