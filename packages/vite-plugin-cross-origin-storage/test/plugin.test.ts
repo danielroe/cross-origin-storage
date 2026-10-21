@@ -132,12 +132,72 @@ describe('cosPlugin with vue', () => {
   })
 
   it('derives the base path from the vite config', () => {
-    expect(app.html()).toMatch(/"base":"\/assets\/"/)
+    expect(app.html()).toMatch(/\{"base":"\/assets\/"/)
   })
 
   it('leaves `assets` out of the manifest when no file is referenced', () => {
     expect(app.html()).not.toContain('"assets"')
   })
+})
+
+describe('cosPlugin build recipe', () => {
+  // A change here means every published chunk hash changes, including those on the Public Hash List.
+  it('emits the same chunks as the current recipe', async () => {
+    writePackage('cos-fixture-recipe', {
+      'package.json': '{"name":"cos-fixture-recipe","type":"module","main":"index.js"}',
+      'index.js': [
+        '/*! @license MIT cos-fixture-recipe */',
+        'import legacy from "./legacy.cjs"',
+        'export { even, odd } from "./even.js"',
+        'export * from "./store.js"',
+        'export const lazy = () => import("./lazy.js")',
+        'export const version = `${legacy.major}.${legacy.minor}`',
+        '',
+      ].join('\n'),
+      'even.js': 'import { odd } from "./odd.js"\nexport { odd }\nexport function even(n) {\n  return n === 0 ? true : odd(n - 1)\n}\n',
+      'odd.js': 'import { even } from "./even.js"\nexport function odd(n) {\n  return n === 0 ? false : even(n - 1)\n}\n',
+      'store.js': [
+        '/** Creates a store. */',
+        'export class Store {',
+        '  #state',
+        '  static instances = 0',
+        '  constructor(initial = {}) {',
+        '    this.#state = { ...initial }',
+        '    Store.instances++',
+        '  }',
+        '  get(key) {',
+        '    return this.#state?.[key] ?? null',
+        '  }',
+        '  async *entries() {',
+        '    for (const [key, value] of Object.entries(this.#state)) {',
+        '      yield [key, await value]',
+        '    }',
+        '  }',
+        '}',
+        'export const createStore = /*#__PURE__*/ (initial) => new Store(initial)',
+        'export const defaultStore = /*#__PURE__*/ createStore({ ready: true })',
+        '',
+      ].join('\n'),
+      'legacy.cjs': 'const parts = require("./parts.cjs")\nmodule.exports = { major: parts[0], minor: parts[1] }\n',
+      'parts.cjs': 'module.exports = [1, 2]\n',
+      'lazy.js': 'export default function lazy(items) {\n  return items.map((item, index) => `${index}: ${item}`).join("\\n")\n}\n',
+    })
+    const app = await buildApp(
+      'import { version } from "cos-fixture-recipe"\ndocument.title = version\n',
+      ['cos-fixture-recipe'],
+      [],
+    )
+    expect(app.cosChunks().sort()).toMatchInlineSnapshot(`
+      [
+        "03b65d34f4a014c61e6b5abc313e09d0bd79c3889be73af8c7d91e45ffe7beca.js",
+        "1238c89cbfac707dd3ce0db573f83b3de990e1ad6a6e44ecf0c63ddb3bb72626.js",
+        "6e0f66c079a5abba1bd12252b27405b0a1bee6691385a1bf55266219807844f4.js",
+        "933322c648d5f46459ebee6b7cde49ba01f74733459b45ee639bf26829e1aa23.js",
+        "c2260d0a2ba5901e46b9f5b709412aff4b8b3e84c4a603a917f7022a5977aa3b.js",
+        "e8eb5e008fa81a6343b04245dbe7c77a4ef141d289046d0e54c73500591d94a9.js",
+      ]
+    `)
+  }, 120_000)
 })
 
 describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {
