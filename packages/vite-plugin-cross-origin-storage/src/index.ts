@@ -190,8 +190,7 @@ function stringLiteral(node: unknown): SourceLiteral | undefined {
  * module's source to `new URL(import.meta.resolve('cos-asset:<file>'))`, and
  * return the files it references. A managed chunk runs from a `blob:` URL when
  * it comes out of COS, and a relative path cannot be resolved against one; the
- * import map resolves the asset specifier instead. `three`'s `DRACOLoader` and
- * `KTX2Loader` locate their decoders this way.
+ * import map resolves the asset specifier instead.
  */
 function rewriteAssetUrls(code: string, id: string): { code: string, assets: string[] } {
   const magic = new MagicString(code)
@@ -431,10 +430,6 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         queue.push(...deps)
       }
 
-      // Files the managed chunks reference through `new URL(…, import.meta.url)`
-      // are emitted under their content hash. They load from the network only
-      // when the app asks for them, so a decoder the app never uses costs
-      // nothing.
       const assetSpecifiers = new Map<string, string>()
       const assets: NonNullable<CosManifest['assets']> = {}
       for (const file of new Set([...raw.values()].flatMap(r => r.assets))) {

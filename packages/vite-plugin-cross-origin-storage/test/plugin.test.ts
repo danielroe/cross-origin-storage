@@ -273,7 +273,6 @@ describe('cosPlugin with package-internal imports', () => {
   }, 120_000)
 
   it('emits files referenced through `new URL(…, import.meta.url)` under their content hash', async () => {
-    // Shaped like `three`'s `DRACOLoader`, which locates its decoder this way.
     const decoder = 'decoder-bytes'
     const entry = writePackage('cos-fixture-asset', {
       'package.json': '{"name":"cos-fixture-asset","type":"module","main":"index.js"}',

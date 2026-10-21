@@ -79,7 +79,8 @@ The [Cross-Origin Storage API](https://github.com/WICG/cross-origin-storage) is 
 - **Managed packages must be self-contained.** A package whose source imports build-time virtuals (e.g. `#build/*`, `#imports`) cannot be bundled standalone and is rejected with a clear error. It also wouldn't be shareable, since its output would differ per app.
 - **Single-entry builds.** The loader wires up one entry chunk; multi-page builds with several HTML entries are not yet supported.
 - **The app entry is never COS-shared.** It is app-specific and is loaded from the network.
-- **Referenced files load from the network.** A file that a managed package locates with `new URL('<relative path>', import.meta.url)`, such as a decoder's `.wasm`, is emitted under its content hash and fetched only when the app requests it, so it is not stored in COS. Managed chunks run from `blob:` URLs, so a `new URL()` with a computed relative path cannot be resolved inside one.
+- **Referenced files load from the network.** A file that a managed package locates with `new URL('<relative path>', import.meta.url)`, such as a decoder's `.wasm`, is emitted under its content hash and fetched only when the app requests it, so it is not stored in COS. Managed chunks run from `blob:` URLs, so only a literal path to an existing file can be resolved inside one; a computed path, a directory, or a path with a query or hash cannot.
+- **Referenced files are emitted as-is.** A worker started with `new Worker(new URL('./worker.js', import.meta.url))` is copied without bundling, so it must not import other modules.
 - **Determinism is recipe-scoped.** Sharing only happens between builds on the same package version *and* the same recipe (`cos1:`).
 
 ## Credits
