@@ -16,9 +16,11 @@ export interface CosManifest {
    */
   entry: { specifier: string, file: string }
   /**
-   * Map of content-addressed specifier to `{ file, hash, name }` for every COS-managed chunk.
-   * `name` is the npm package the chunk was bundled from (e.g. `vue`, `@vue/reactivity`), when
-   * it could be derived from the resolved module path; absent for chunks it couldn't be.
+   * Map of specifier to `{ file, hash, name }` for every COS-managed chunk. The specifier is
+   * `cos1:<hash>`, or `cos1:<group hash>-<n>` for a module in an import cycle. `hash` is the
+   * SHA-256 of the chunk's bytes. `name` is the npm package the chunk was bundled from (e.g.
+   * `vue`, `@vue/reactivity`), when it could be derived from the resolved module path; absent for
+   * chunks it couldn't be.
    */
   chunks: Record<string, { file: string, hash: string, name?: string }>
   /**
@@ -32,7 +34,6 @@ export interface CosManifest {
 export async function runCosLoader(manifest: CosManifest): Promise<void> {
   window.__cosManifest = manifest
 
-  // Only use COS where `getFileHandle()` itself exists.
   const cos = typeof navigator.crossOriginStorage?.getFileHandle === 'function' ? navigator.crossOriginStorage : undefined
   const imports: Record<string, string> = {}
 

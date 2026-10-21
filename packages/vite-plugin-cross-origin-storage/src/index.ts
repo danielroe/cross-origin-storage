@@ -14,12 +14,11 @@ export type { CosManifest }
 const MANIFEST_PLACEHOLDER = '__COS_MANIFEST__'
 
 /**
- * Recipe version embedded in every content-addressed specifier. Bump this
- * whenever the build recipe (bundler version, options, define replacements)
- * changes in a way that alters emitted bytes, so chunks built under different
- * recipes cannot silently collide on the same SHA-256.
+ * Version of the specifier format (`cos1:<sha256>`, `cos1:<sha256>-<n>`). Bump
+ * it when the meaning of a specifier changes; a build recipe change already
+ * changes every hash.
  */
-const RECIPE = 'cos1'
+const SPECIFIER_VERSION = 'cos1'
 
 // Resolve the loader entry next to this module: `.mjs` when built (dist),
 // `.ts` when run from source (tests). The plugin rolldown-bundles whichever
@@ -61,7 +60,7 @@ export interface CosPluginOptions {
 }
 
 function contentSpecifier(hash: string): string {
-  return `${RECIPE}:${hash}`
+  return `${SPECIFIER_VERSION}:${hash}`
 }
 
 const NODE_MODULES = '/node_modules/'
@@ -349,8 +348,8 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
       const base = options.base ?? joinBase(resolvedBase, assetsDir)
       const assetPrefix = assetsDir ? `${assetsDir.replace(/^\/+|\/+$/g, '')}/` : ''
 
-      // Build each managed package standalone, externalising every dependency
-      // by its resolved absolute id. Transitive dependencies are discovered and
+      // Build each managed module standalone, externalising every import by its
+      // resolved absolute id. Transitive dependencies are discovered and
       // queued here, so managing a package implicitly manages its whole import
       // subgraph (e.g. `vue` pulls in `@vue/*`) without the app having to list
       // them. The externalised ids double as the edges between managed chunks.
@@ -395,9 +394,6 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
                 if (dep.id.startsWith('\0')) {
                   return null
                 }
-                // Every file is a chunk of its own, even within one package, so
-                // a module that several entry points share (`three` and
-                // `three/webgpu` both import `three.core.js`) exists once.
                 deps.add(dep.id)
                 // Externalise under a synthetic specifier keyed by the resolved
                 // id, so the emitted import is a literal token we rewrite later.
@@ -407,10 +403,9 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
               },
             }],
           })
-          // `minify` is part of the pinned recipe (see RECIPE): it both shrinks
-          // the chunk and strips rolldown's `//#region <path>` debug comments,
-          // which embed cwd-relative paths and would otherwise make the hash
-          // depend on the build location.
+          // `minify` both shrinks the chunk and strips rolldown's
+          // `//#region <path>` debug comments, which embed cwd-relative paths
+          // and would otherwise make the hash depend on the build location.
           const { output } = await builder.generate({
             file: 'chunk.js',
             codeSplitting: false,
@@ -522,7 +517,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
           // The entry is app-specific and is re-rendered by Vite after this
           // hook, so it cannot be content-addressed here; it loads from the
           // network under a stable specifier instead.
-          entry = { specifier: `${RECIPE}:entry`, file: file.fileName.replace(new RegExp(`^${assetPrefix}`), '') }
+          entry = { specifier: `${SPECIFIER_VERSION}:entry`, file: file.fileName.replace(new RegExp(`^${assetPrefix}`), '') }
         }
       }
 

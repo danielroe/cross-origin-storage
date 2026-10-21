@@ -11,12 +11,12 @@ This builds on [Thomas Steiner](https://github.com/tomayac)'s original [`vite-pl
 
 At build time, for each package matched by `packages`:
 
-1. The package is externalised from the app graph and re-bundled on its own with `rolldown`, **preserving every export** (no tree-shaking). This makes a chunk's bytes depend only on the package, never on which parts of it the app happened to import, so it is identical across sites.
-2. Its dependencies are discovered and bundled too, recursively, so managing one package implicitly manages its whole import subgraph (e.g. `vue` pulls in `@vue/*`). Shared dependencies become their own chunks rather than being duplicated, which also preserves singletons like `@vue/reactivity`.
+1. The package is externalised from the app graph, and each of its modules is built on its own with `rolldown`, **preserving every export** (no tree-shaking). This makes a chunk's bytes depend only on its module, never on which parts of it the app happened to import, so it is identical across sites.
+2. Its imports are discovered and built too, recursively, so managing one package implicitly manages its whole import subgraph (e.g. `vue` pulls in `@vue/*`). Each imported module becomes exactly one chunk, so a module that several entry points or packages import is never duplicated, which also preserves singletons like `@vue/reactivity`. Files loaded with `require()` are instead bundled into each chunk that requires them.
 3. Chunks are hashed **bottom-up**: each chunk imports its dependencies by their content hash (`cos1:<sha256>`), so a chunk can only be hashed once its dependencies are. Modules in an import cycle are hashed as a group and import each other as `cos1:<sha256>-<n>`. The result is purely a function of the source plus a pinned build recipe.
 4. A runtime loader is injected. It looks each managed chunk up in COS by hash, falling back to the network and storing the fetched chunk for next time, then wires everything together through an import map.
 
-The `cos1:` prefix is a **recipe version**. Chunks are only byte-identical across builds that use the same recipe (the same `rolldown` version and options); the prefix is bumped when the recipe changes so chunks built under different recipes can never collide on the same hash.
+The `cos1:` prefix is the **specifier format version**. Chunks are only byte-identical across builds that use the same build recipe: the `rolldown` version and options pinned by each release of this plugin. A different recipe produces different bytes, and so different hashes, so its chunks are not shared but never collide.
 
 ## Installation
 
@@ -81,7 +81,9 @@ The [Cross-Origin Storage API](https://github.com/WICG/cross-origin-storage) is 
 - **The app entry is never COS-shared.** It is app-specific and is loaded from the network.
 - **Referenced files load from the network.** A file that a managed package locates with `new URL('<relative path>', import.meta.url)`, such as a decoder's `.wasm`, is emitted under its content hash and fetched only when the app requests it, so it is not stored in COS. Managed chunks run from `blob:` URLs, so only a literal path to an existing file can be resolved inside one; a computed path, a directory, or a path with a query or hash cannot.
 - **Referenced files are emitted as-is.** A worker started with `new Worker(new URL('./worker.js', import.meta.url))` is copied without bundling, so it must not import other modules.
-- **Determinism is recipe-scoped.** Sharing only happens between builds on the same package version *and* the same recipe (`cos1:`).
+- **Determinism is recipe-scoped.** Sharing only happens between builds on the same package version *and* the same build recipe, which in practice means the same release of this plugin.
+- **Identical modules share one instance.** Two modules whose output is byte-identical, even from different packages or versions, resolve to the same chunk, and so to the same module instance at runtime.
+- **Every module is a chunk.** A package that ships many small files (such as `lodash-es`) produces as many chunks, and the loader resolves every managed chunk before the app starts, including those only reached through a dynamic `import()`.
 
 ## Credits
 
