@@ -553,7 +553,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         }
         return html
           .replace(/<script type="module"[^>]*src="[^"]*"[^>]*><\/script>/g, '')
-          .replace(/(<script\s[^>]*?(?<![\w-])type=)(["']?)importmap\2(?=[\s>])/gi, '$1$2cos-importmap$2')
+          .replace(/(<script\s[^>]*?(?<![\w-])type\s*=\s*)(["']?)importmap\2(?=[\s>])/gi, '$1$2cos-importmap$2')
           .replace('</head>', `<script id="cos-loader">${scriptContent}</script></head>`)
       },
     },

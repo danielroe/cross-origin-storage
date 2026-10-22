@@ -66,17 +66,34 @@ function integrity(hash: string): string {
   return `sha256-${btoa(String.fromCharCode(...bytes))}`
 }
 
-function readPageImports(): Record<string, string> {
-  const imports: Record<string, string> = {}
+interface ImportMap {
+  imports: Record<string, string>
+  scopes: Record<string, Record<string, string>>
+  integrity: Record<string, string>
+}
+
+function addMissing(target: Record<string, string>, source: Record<string, string> = {}): void {
+  for (const [key, value] of Object.entries(source)) {
+    target[key] ??= value
+  }
+}
+
+function readPageImportMap(): ImportMap {
+  const map: ImportMap = { imports: {}, scopes: {}, integrity: {} }
   for (const script of document.querySelectorAll('script[type="cos-importmap"]')) {
     try {
-      Object.assign(imports, JSON.parse(script.textContent || '{}').imports)
+      const page: Partial<ImportMap> = JSON.parse(script.textContent || '{}')
+      addMissing(map.imports, page.imports)
+      addMissing(map.integrity, page.integrity)
+      for (const [scope, imports] of Object.entries(page.scopes ?? {})) {
+        addMissing(map.scopes[scope] ??= {}, imports)
+      }
     }
     catch (error) {
       console.error('[cos] invalid import map', error)
     }
   }
-  return imports
+  return map
 }
 
 export async function runCosLoader(manifest: CosManifest): Promise<void> {
@@ -84,7 +101,8 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
 
   let cos = typeof navigator.crossOriginStorage?.getFileHandle === 'function' ? navigator.crossOriginStorage : undefined
   let canStore = true
-  const imports = readPageImports()
+  const pageMap = readPageImportMap()
+  const { imports } = pageMap
 
   const chunks = Object.values(manifest.chunks)
   const hashes = new Set(chunks.map(chunk => chunk.hash))
@@ -200,7 +218,11 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
 
   const script = document.createElement('script')
   script.type = 'importmap'
-  script.textContent = JSON.stringify({ imports })
+  script.textContent = JSON.stringify({
+    imports,
+    ...Object.keys(pageMap.scopes).length ? { scopes: pageMap.scopes } : {},
+    ...Object.keys(pageMap.integrity).length ? { integrity: pageMap.integrity } : {},
+  })
   document.head.appendChild(script)
 
   void Promise.all(stores).then(() => {

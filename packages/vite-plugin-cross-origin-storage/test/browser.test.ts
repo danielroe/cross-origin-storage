@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { createReadStream, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, globSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -107,17 +108,30 @@ describe('browser (relative base, served from a sub-path)', () => {
   })
 })
 
-describe('browser (page with its own import map)', () => {
+describe('browser (page with its own import maps)', () => {
+  const greeting = 'export const greeting = "hello"\n'
+  const integrity = { '/greeting.js': `sha384-${createHash('sha384').update(greeting).digest('base64')}` }
   let server: { origin: string, close: () => Promise<void> }
 
   beforeAll(async () => {
-    const root = writeApp('import { ref } from "vue"\nimport { greeting } from "page:greeting"\ndocument.querySelector("#app").textContent = `${greeting} ${ref(1).value}`\n')
+    const root = writeApp(
+      'import { ref } from "vue"\nimport { greeting } from "page:greeting"\nimport { name } from "page:name"\n'
+      + 'document.querySelector("#app").textContent = `${greeting} ${name} ${ref(1).value}`\n',
+    )
+    const first = { imports: { 'page:greeting': '/greeting.js', 'page:name': '/name.js' }, scopes: { '/assets/': { 'page:name': '/scoped-name.js' } }, integrity }
+    const second = { imports: { 'page:greeting': '/other-greeting.js' } }
     writeFileSync(
       join(root, 'index.html'),
-      readFileSync(join(root, 'index.html'), 'utf8').replace('<head>', '<head><script type="importmap">{"imports":{"page:greeting":"/greeting.js"}}</script>'),
+      readFileSync(join(root, 'index.html'), 'utf8').replace(
+        '<head>',
+        `<head><script type = "importmap">${JSON.stringify(first)}</script><script type="importmap">${JSON.stringify(second)}</script>`,
+      ),
     )
     mkdirSync(join(root, 'public'))
-    writeFileSync(join(root, 'public/greeting.js'), 'export const greeting = "hello"\n')
+    writeFileSync(join(root, 'public/greeting.js'), greeting)
+    writeFileSync(join(root, 'public/other-greeting.js'), 'export const greeting = "goodbye"\n')
+    writeFileSync(join(root, 'public/name.js'), 'export const name = "page"\n')
+    writeFileSync(join(root, 'public/scoped-name.js'), 'export const name = "scope"\n')
 
     const { cosPlugin } = await import('../src/index')
     await build({
@@ -125,7 +139,7 @@ describe('browser (page with its own import map)', () => {
       logLevel: 'error',
       resolve: { alias: { vue: vueEntry } },
       plugins: [cosPlugin({ packages: [/^(?:vue$|@vue\/)/] })],
-      build: { outDir: join(root, 'dist'), emptyOutDir: true, rollupOptions: { external: ['page:greeting'] } },
+      build: { outDir: join(root, 'dist'), emptyOutDir: true, rollupOptions: { external: ['page:greeting', 'page:name'] } },
     })
     server = await serve(join(root, 'dist'))
   }, 120_000)
@@ -135,16 +149,16 @@ describe('browser (page with its own import map)', () => {
     rmSync(scratchRoot, { recursive: true, force: true })
   })
 
-  it('merges the page import map into the one the loader adds', async () => {
+  it('merges the page import maps into the one the loader adds', async () => {
     const browser = await launchPlainBrowser()
     try {
       const page = await browser.newPage()
       await page.goto(server.origin, { waitUntil: 'networkidle' })
-      await page.locator('#app', { hasText: 'hello 1' }).waitFor({ timeout: 5000 })
+      await page.locator('#app', { hasText: 'hello scope 1' }).waitFor({ timeout: 5000 })
 
       const importMaps = await page.locator('script[type="importmap"]').allTextContents()
       expect(importMaps).toHaveLength(1)
-      expect(importMaps[0]).toContain('"page:greeting":"/greeting.js"')
+      expect(JSON.parse(importMaps[0]!).integrity).toEqual(integrity)
     }
     finally {
       await browser.close()
