@@ -19,6 +19,8 @@ function nuxtPreloadLinkRe(assetsBase: string): RegExp {
   )
 }
 
+const importMapRe = /(<script\s[^>]*?(?<![\w-])type=")importmap(")/g
+
 export default (nitroApp: NitroApp) => {
   nitroApp.hooks.hook('render:html', (ctx) => {
     const assetsBase = resolveBuildAssetsBase(useRuntimeConfig().app)
@@ -26,7 +28,7 @@ export default (nitroApp: NitroApp) => {
     const preloadRe = nuxtPreloadLinkRe(assetsBase)
 
     ctx.head = ctx.head.map(chunk =>
-      chunk.replace(entryRe, '').replace(preloadRe, ''),
+      chunk.replace(entryRe, '').replace(preloadRe, '').replace(importMapRe, '$1cos-importmap$2'),
     )
     ctx.head.push(`<script id="cos-loader">${scriptContent}</script>`)
   })

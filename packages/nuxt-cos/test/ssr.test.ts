@@ -35,6 +35,11 @@ describe('ssr', async () => {
     expect(html).not.toMatch(/<script type="module"[^>]*src="\/_nuxt\/[^"]*"/)
   })
 
+  it('leaves the import map to the cos loader', async () => {
+    const html = await $fetch('/')
+    expect(html).not.toMatch(/<script[^>]*type="importmap"/)
+  })
+
   it('keeps the rendered styles, title and meta while stripping the cos-managed head tags', async () => {
     const html = await $fetch('/')
     const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))

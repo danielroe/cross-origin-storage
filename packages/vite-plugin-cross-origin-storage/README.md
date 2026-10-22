@@ -14,7 +14,7 @@ At build time, for each package matched by `packages`:
 1. The package is externalised from the app graph, and each of its modules is built on its own with `rolldown`, **preserving every export** (no tree-shaking). This makes a chunk's bytes depend only on its module, never on which parts of it the app happened to import, so it is identical across sites.
 2. Its imports are discovered and built too, recursively, so managing one package implicitly manages its whole import subgraph (e.g. `vue` pulls in `@vue/*`). Each imported module becomes exactly one chunk, so a module that several entry points or packages import is never duplicated, which also preserves singletons like `@vue/reactivity`. Files loaded with `require()` are instead bundled into each chunk that requires them.
 3. Chunks are hashed **bottom-up**: each chunk imports its dependencies by their content hash (`cos1:<sha256>`), so a chunk can only be hashed once its dependencies are. Modules in an import cycle are hashed as a group and import each other as `cos1:<sha256>-<n>`. The result is purely a function of the source plus a pinned build recipe.
-4. A runtime loader is injected. It looks each managed chunk up in COS by hash, falling back to the network (verifying the chunk against its hash) and storing the fetched chunk for next time, then wires everything together through an import map.
+4. A runtime loader is injected. It looks each managed chunk up in COS by hash, falling back to the network (verifying the chunk against its hash) and storing the fetched chunk for next time, then wires everything together through an import map. Any import map already in the page is merged into it, so the page ends up with a single import map.
 
 Browsers can cap how many lookups a site makes for files it did not store itself, so the loader only looks up the 8 largest of those per load and fetches the rest. A chunk found through another site is written back, so later lookups for it are the site's own. Where a permissions policy blocks COS, such as in a cross-origin `<iframe>` without `allow="cross-origin-storage"`, every chunk is loaded from the network.
 
@@ -70,7 +70,7 @@ For local testing it's safest to load the extension unpacked from [`web-ai-commu
 | `packages` | `Array<string \| RegExp>` | (required) | Packages to extract into COS chunks. Matched against the imported specifier; a plain string is an exact match. Transitive dependencies are collected automatically. |
 | `base` | `string` | Vite's `base` + `build.assetsDir` | Public path the chunks are served from. |
 | `loaderEntry` | `string` | bundled loader | Path to a custom runtime loader entry. |
-| `onGenerated` | `(scriptContent: string) => void` | (unset) | Receives the loader `<script>` body once chunks are emitted. SSR frameworks inject it into their own rendered HTML; when omitted the plugin injects into `index.html`. |
+| `onGenerated` | `(scriptContent: string) => void` | (unset) | Receives the loader `<script>` body once chunks are emitted. SSR frameworks inject it into their own rendered HTML and render any import map in the page as `<script type="cos-importmap">`; when omitted the plugin does both in `index.html`. |
 
 ## Browser support
 

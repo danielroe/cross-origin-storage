@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
 import { build as build7 } from 'vite7'
 import { cosPlugin, RECIPE } from '../src/index'
-import type { Alias } from 'vite'
+import type { Alias, Plugin } from 'vite'
 
 type BuildFn = typeof build
 
@@ -33,7 +33,7 @@ async function buildApp(
   entry: string,
   packages: Array<string | RegExp>,
   alias: Alias[],
-  options: { sourcemap?: boolean, build?: BuildFn, warnings?: string[] } = {},
+  options: { sourcemap?: boolean, build?: BuildFn, warnings?: string[], plugins?: Plugin[] } = {},
 ): Promise<Built> {
   mkdirSync(scratchRoot, { recursive: true })
   const root = mkdtempSync(join(scratchRoot, 'app-'))
@@ -50,7 +50,7 @@ async function buildApp(
     root,
     logLevel: 'error',
     resolve: { alias },
-    plugins: [cosPlugin({ packages })],
+    plugins: [cosPlugin({ packages }), ...options.plugins ?? []],
     build: {
       outDir,
       emptyOutDir: true,
@@ -389,6 +389,35 @@ describe('cosPlugin with package-internal imports', () => {
       [],
     )
     expect(app.cosChunks().filter(f => app.read(f).includes('the-one-core'))).toHaveLength(1)
+  }, 120_000)
+
+  it('manages a package that another plugin resolves again from a different importer', async () => {
+    writePackage('cos-fixture-reresolved', {
+      'package.json': '{"name":"cos-fixture-reresolved","type":"module","main":"index.js"}',
+      'index.js': 'export const value = "reresolved"\n',
+    })
+    const otherImporter = join(scratchRoot, 'index.js')
+    const reresolve: Plugin = {
+      name: 'reresolve',
+      enforce: 'pre',
+      resolveId: {
+        filter: { id: /^cos-fixture-reresolved$/ },
+        handler(id, importer) {
+          if (!importer || importer === otherImporter) {
+            return
+          }
+          return this.resolve(id, otherImporter, { skipSelf: true })
+        },
+      },
+    }
+    const app = await buildApp(
+      'import { value } from "cos-fixture-reresolved"\ndocument.title = value\n',
+      ['cos-fixture-reresolved'],
+      [],
+      { plugins: [reresolve] },
+    )
+    expect(app.cosChunks().map(f => app.read(f))).toEqual([expect.stringContaining('reresolved')])
+    expect(app.appChunks().map(f => app.read(f)).join('\n')).toMatch(/cos1:[a-f0-9]{64}/)
   }, 120_000)
 
   it('emits files referenced through `new URL(…, import.meta.url)` under their content hash', async () => {

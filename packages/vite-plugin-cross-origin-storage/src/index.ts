@@ -60,8 +60,10 @@ export interface CosPluginOptions {
   /**
    * Called once the managed chunks are emitted, with the loader `<script>` body
    * (loader IIFE + inlined manifest). SSR frameworks should inject this into
-   * their rendered HTML themselves. When omitted, the plugin injects it into
-   * `index.html` via `transformIndexHtml` for plain client builds.
+   * their rendered HTML themselves, and render any import map in the page as
+   * `<script type="cos-importmap">` so the loader merges it into its own. When
+   * omitted, the plugin does both in `index.html` via `transformIndexHtml` for
+   * plain client builds.
    */
   onGenerated?: (scriptContent: string) => void
 }
@@ -339,13 +341,16 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
           return
         }
 
-        collected.add(resolved.id)
+        // Another plugin in the chain can resolve the id again from a different
+        // importer, which re-enters this hook and yields an externalised id.
+        const target = resolved.id.startsWith('cos-ext:') ? resolved.id.slice('cos-ext:'.length) : resolved.id
+        collected.add(target)
 
         // Externalise under a synthetic specifier so it never clashes with the
         // real module id elsewhere in the app graph. It is rewritten to a
         // content-addressed specifier in `generateBundle`, once every managed
         // chunk has been hashed bottom-up.
-        return { id: `cos-ext:${resolved.id}`, external: true }
+        return { id: `cos-ext:${target}`, external: true }
       },
     },
     async generateBundle(_outputOptions, bundle) {
@@ -548,6 +553,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         }
         return html
           .replace(/<script type="module"[^>]*src="[^"]*"[^>]*><\/script>/g, '')
+          .replace(/(<script\s[^>]*?(?<![\w-])type\s*=\s*)(["']?)importmap\2(?=[\s>])/gi, '$1$2cos-importmap$2')
           .replace('</head>', `<script id="cos-loader">${scriptContent}</script></head>`)
       },
     },
