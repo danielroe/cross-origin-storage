@@ -339,13 +339,16 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
           return
         }
 
-        collected.add(resolved.id)
+        // Another plugin in the chain can resolve the id again from a different
+        // importer, which re-enters this hook and yields an externalised id.
+        const target = resolved.id.startsWith('cos-ext:') ? resolved.id.slice('cos-ext:'.length) : resolved.id
+        collected.add(target)
 
         // Externalise under a synthetic specifier so it never clashes with the
         // real module id elsewhere in the app graph. It is rewritten to a
         // content-addressed specifier in `generateBundle`, once every managed
         // chunk has been hashed bottom-up.
-        return { id: `cos-ext:${resolved.id}`, external: true }
+        return { id: `cos-ext:${target}`, external: true }
       },
     },
     async generateBundle(_outputOptions, bundle) {
