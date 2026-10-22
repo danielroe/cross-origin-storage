@@ -60,8 +60,10 @@ export interface CosPluginOptions {
   /**
    * Called once the managed chunks are emitted, with the loader `<script>` body
    * (loader IIFE + inlined manifest). SSR frameworks should inject this into
-   * their rendered HTML themselves. When omitted, the plugin injects it into
-   * `index.html` via `transformIndexHtml` for plain client builds.
+   * their rendered HTML themselves, and render any import map in the page as
+   * `<script type="cos-importmap">` so the loader merges it into its own. When
+   * omitted, the plugin does both in `index.html` via `transformIndexHtml` for
+   * plain client builds.
    */
   onGenerated?: (scriptContent: string) => void
 }
@@ -551,6 +553,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         }
         return html
           .replace(/<script type="module"[^>]*src="[^"]*"[^>]*><\/script>/g, '')
+          .replace(/(<script\s[^>]*?(?<![\w-])type=)(["']?)importmap\2(?=[\s>])/gi, '$1$2cos-importmap$2')
           .replace('</head>', `<script id="cos-loader">${scriptContent}</script></head>`)
       },
     },

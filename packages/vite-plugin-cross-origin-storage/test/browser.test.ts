@@ -107,6 +107,51 @@ describe('browser (relative base, served from a sub-path)', () => {
   })
 })
 
+describe('browser (page with its own import map)', () => {
+  let server: { origin: string, close: () => Promise<void> }
+
+  beforeAll(async () => {
+    const root = writeApp('import { ref } from "vue"\nimport { greeting } from "page:greeting"\ndocument.querySelector("#app").textContent = `${greeting} ${ref(1).value}`\n')
+    writeFileSync(
+      join(root, 'index.html'),
+      readFileSync(join(root, 'index.html'), 'utf8').replace('<head>', '<head><script type="importmap">{"imports":{"page:greeting":"/greeting.js"}}</script>'),
+    )
+    mkdirSync(join(root, 'public'))
+    writeFileSync(join(root, 'public/greeting.js'), 'export const greeting = "hello"\n')
+
+    const { cosPlugin } = await import('../src/index')
+    await build({
+      root,
+      logLevel: 'error',
+      resolve: { alias: { vue: vueEntry } },
+      plugins: [cosPlugin({ packages: [/^(?:vue$|@vue\/)/] })],
+      build: { outDir: join(root, 'dist'), emptyOutDir: true, rollupOptions: { external: ['page:greeting'] } },
+    })
+    server = await serve(join(root, 'dist'))
+  }, 120_000)
+
+  afterAll(async () => {
+    await server?.close()
+    rmSync(scratchRoot, { recursive: true, force: true })
+  })
+
+  it('merges the page import map into the one the loader adds', async () => {
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.goto(server.origin, { waitUntil: 'networkidle' })
+      await page.locator('#app', { hasText: 'hello 1' }).waitFor({ timeout: 5000 })
+
+      const importMaps = await page.locator('script[type="importmap"]').allTextContents()
+      expect(importMaps).toHaveLength(1)
+      expect(importMaps[0]).toContain('"page:greeting":"/greeting.js"')
+    }
+    finally {
+      await browser.close()
+    }
+  })
+})
+
 describe('browser (file referenced through `new URL(…, import.meta.url)`)', () => {
   let root: string
   let server: { origin: string, close: () => Promise<void> }

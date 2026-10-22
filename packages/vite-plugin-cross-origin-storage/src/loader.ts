@@ -66,12 +66,25 @@ function integrity(hash: string): string {
   return `sha256-${btoa(String.fromCharCode(...bytes))}`
 }
 
+function readPageImports(): Record<string, string> {
+  const imports: Record<string, string> = {}
+  for (const script of document.querySelectorAll('script[type="cos-importmap"]')) {
+    try {
+      Object.assign(imports, JSON.parse(script.textContent || '{}').imports)
+    }
+    catch (error) {
+      console.error('[cos] invalid import map', error)
+    }
+  }
+  return imports
+}
+
 export async function runCosLoader(manifest: CosManifest): Promise<void> {
   window.__cosManifest = manifest
 
   let cos = typeof navigator.crossOriginStorage?.getFileHandle === 'function' ? navigator.crossOriginStorage : undefined
   let canStore = true
-  const imports: Record<string, string> = {}
+  const imports = readPageImports()
 
   const chunks = Object.values(manifest.chunks)
   const hashes = new Set(chunks.map(chunk => chunk.hash))
