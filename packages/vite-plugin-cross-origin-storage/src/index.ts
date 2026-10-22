@@ -20,6 +20,13 @@ const MANIFEST_PLACEHOLDER = '__COS_MANIFEST__'
  */
 const SPECIFIER_VERSION = 'cos1'
 
+/**
+ * Version of the build recipe: the `rolldown` version and options that decide a
+ * chunk's bytes. It increases whenever the chunks emitted for the same source
+ * change, and only in a minor release.
+ */
+export const RECIPE: number = 1
+
 // Resolve the loader entry next to this module: `.mjs` when built (dist),
 // `.ts` when run from source (tests). The plugin rolldown-bundles whichever
 // exists into the injected `<script>`.
@@ -528,7 +535,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         return
       }
 
-      const manifest: CosManifest = { base, entry, chunks: managed, ...(assetSpecifiers.size ? { assets } : {}) }
+      const manifest: CosManifest = { base, recipe: RECIPE, entry, chunks: managed, ...(assetSpecifiers.size ? { assets } : {}) }
       loaderTemplate ??= bundleLoader(loaderEntry)
       scriptContent = (await loaderTemplate).replace(MANIFEST_PLACEHOLDER, JSON.stringify(manifest))
       options.onGenerated?.(scriptContent)

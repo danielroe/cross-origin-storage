@@ -1,5 +1,5 @@
 import { assertType, describe, expectTypeOf, it } from 'vitest'
-import { cosPlugin } from '../src/index'
+import { cosPlugin, RECIPE } from '../src/index'
 import type { CosManifest, CosPluginOptions } from '../src/index'
 import type { Plugin } from 'vite'
 
@@ -36,10 +36,17 @@ describe('cosPlugin', () => {
   })
 })
 
+describe('RECIPE', () => {
+  it('is typed as a number', () => {
+    expectTypeOf(RECIPE).toEqualTypeOf<number>()
+  })
+})
+
 describe('CosManifest', () => {
   it('describes the manifest shape consumed by the loader', () => {
     expectTypeOf<CosManifest>().toEqualTypeOf<{
       base: string
+      recipe: number
       entry: { specifier: string, file: string }
       chunks: Record<string, { file: string, hash: string, name?: string, size: number }>
       assets?: Record<string, { file: string, hash: string, name?: string }>

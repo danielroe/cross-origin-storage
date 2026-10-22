@@ -18,7 +18,7 @@ At build time, for each package matched by `packages`:
 
 Browsers can cap how many lookups a site makes for files it did not store itself, so the loader only looks up the 8 largest of those per load and fetches the rest. A chunk found through another site is written back, so later lookups for it are the site's own. Where a permissions policy blocks COS, such as in a cross-origin `<iframe>` without `allow="cross-origin-storage"`, every chunk is loaded from the network.
 
-The `cos1:` prefix is the **specifier format version**. Chunks are only byte-identical across builds that use the same build recipe: the `rolldown` version and options pinned by each release of this plugin. A different recipe produces different bytes, and so different hashes, so its chunks are not shared but never collide.
+The `cos1:` prefix is the **specifier format version**. Chunks are only byte-identical across builds that use the same **build recipe**: the `rolldown` version and options pinned by this plugin. Recipes are numbered by the exported `RECIPE` constant, also recorded as `recipe` in the manifest. The number increases whenever the chunks emitted for the same source change, which only happens in a minor release, never a patch. A different recipe produces different bytes, and so different hashes, so its chunks are not shared but never collide.
 
 ## Installation
 
@@ -84,7 +84,7 @@ The [Cross-Origin Storage API](https://github.com/WICG/cross-origin-storage) is 
 - **Chunks run from `blob:` URLs.** A Content Security Policy must allow `blob:` in `script-src`.
 - **Referenced files load from the network.** A file that a managed package locates with `new URL('<relative path>', import.meta.url)`, such as a decoder's `.wasm`, is emitted under its content hash and fetched only when the app requests it, so it is not stored in COS. Managed chunks run from `blob:` URLs, so only a literal path to an existing file can be resolved inside one; a computed path, a directory, or a path with a query or hash cannot.
 - **Referenced files are emitted as-is.** A worker started with `new Worker(new URL('./worker.js', import.meta.url))` is copied without bundling, so it must not import other modules.
-- **Determinism is recipe-scoped.** Sharing only happens between builds on the same package version *and* the same build recipe, which in practice means the same release of this plugin.
+- **Sharing is recipe-scoped.** Chunks are only shared between builds on the same build recipe (the manifest's `recipe`), which can span several releases of this plugin. Within a recipe, a module whose output is unchanged between two versions of its package is shared between them too.
 - **Identical modules share one instance.** Two modules whose output is byte-identical, even from different packages or versions, resolve to the same chunk, and so to the same module instance at runtime.
 - **Every module is a chunk.** A package that ships many small files (such as `lodash-es`) produces as many chunks, and the loader resolves every managed chunk before the app starts, including those only reached through a dynamic `import()`.
 

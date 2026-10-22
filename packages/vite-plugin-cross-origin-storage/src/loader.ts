@@ -10,6 +10,8 @@ declare global {
 export interface CosManifest {
   /** Public base path that managed chunks are served from, e.g. `/_nuxt/`. */
   base: string
+  /** The build recipe the chunks were emitted with (`RECIPE`). */
+  recipe: number
   /**
    * The entry chunk to import once the import map is ready. It is app-specific, so it is
    * loaded straight from the network rather than stored in COS by a content hash.

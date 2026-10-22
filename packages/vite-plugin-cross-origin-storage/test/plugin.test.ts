@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
 import { build as build7 } from 'vite7'
-import { cosPlugin } from '../src/index'
+import { cosPlugin, RECIPE } from '../src/index'
 import type { Alias } from 'vite'
 
 type BuildFn = typeof build
@@ -149,8 +149,19 @@ describe('cosPlugin with vue', () => {
 })
 
 describe('cosPlugin build recipe', () => {
-  // A change here means every published chunk hash changes, including those on the Public Hash List.
-  it('emits the same chunks as the current recipe', async () => {
+  // When these change, bump `RECIPE` and add an entry; never edit an existing one.
+  const recipes: Record<number, string[]> = {
+    1: [
+      '03b65d34f4a014c61e6b5abc313e09d0bd79c3889be73af8c7d91e45ffe7beca.js',
+      '1238c89cbfac707dd3ce0db573f83b3de990e1ad6a6e44ecf0c63ddb3bb72626.js',
+      '6e0f66c079a5abba1bd12252b27405b0a1bee6691385a1bf55266219807844f4.js',
+      '933322c648d5f46459ebee6b7cde49ba01f74733459b45ee639bf26829e1aa23.js',
+      'c2260d0a2ba5901e46b9f5b709412aff4b8b3e84c4a603a917f7022a5977aa3b.js',
+      'e8eb5e008fa81a6343b04245dbe7c77a4ef141d289046d0e54c73500591d94a9.js',
+    ],
+  }
+
+  it('emits the chunks recorded for the current recipe', async () => {
     writePackage('cos-fixture-recipe', {
       'package.json': '{"name":"cos-fixture-recipe","type":"module","main":"index.js"}',
       'index.js': [
@@ -195,17 +206,14 @@ describe('cosPlugin build recipe', () => {
       ['cos-fixture-recipe'],
       [],
     )
-    expect(app.cosChunks().sort()).toMatchInlineSnapshot(`
-      [
-        "03b65d34f4a014c61e6b5abc313e09d0bd79c3889be73af8c7d91e45ffe7beca.js",
-        "1238c89cbfac707dd3ce0db573f83b3de990e1ad6a6e44ecf0c63ddb3bb72626.js",
-        "6e0f66c079a5abba1bd12252b27405b0a1bee6691385a1bf55266219807844f4.js",
-        "933322c648d5f46459ebee6b7cde49ba01f74733459b45ee639bf26829e1aa23.js",
-        "c2260d0a2ba5901e46b9f5b709412aff4b8b3e84c4a603a917f7022a5977aa3b.js",
-        "e8eb5e008fa81a6343b04245dbe7c77a4ef141d289046d0e54c73500591d94a9.js",
-      ]
-    `)
+    expect(app.cosChunks().sort()).toEqual(recipes[RECIPE])
+    expect(app.html()).toContain(`{"base":"/assets/","recipe":${RECIPE},`)
   }, 120_000)
+
+  it('records different chunks for every recipe', () => {
+    const all = Object.values(recipes).flat()
+    expect(new Set(all).size).toBe(all.length)
+  })
 })
 
 describe('cosPlugin with a non-vue package graph (unhead + hookable)', () => {
