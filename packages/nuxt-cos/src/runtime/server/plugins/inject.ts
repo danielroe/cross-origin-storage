@@ -1,6 +1,6 @@
 import type { NitroApp } from 'nitropack/types'
 import { useRuntimeConfig } from '#imports'
-import scriptContent from 'virtual:cos-loader'
+import scriptContent, { headers } from 'virtual:cos-loader'
 import { resolveBuildAssetsBase } from '../../utils/assets-base'
 
 function entryModuleScriptRe(assetsBase: string): RegExp {
@@ -31,5 +31,19 @@ export default (nitroApp: NitroApp) => {
       chunk.replace(entryRe, '').replace(preloadRe, '').replace(importMapRe, '$1cos-importmap$2'),
     )
     ctx.head.push(`<script id="cos-loader">${scriptContent}</script>`)
+  })
+
+  // The loader's writes are bounded by the headers of the page that runs it, so only rendered
+  // pages need them. A header the app already sets, for example through `routeRules`, wins.
+  nitroApp.hooks.hook('render:response', (response, { event }) => {
+    if (!String(response.headers?.['content-type'] ?? '').startsWith('text/html')) {
+      return
+    }
+    response.headers ??= {}
+    for (const [name, value] of Object.entries(headers)) {
+      if (!event.node.res.hasHeader(name) && response.headers[name.toLowerCase()] === undefined) {
+        response.headers[name.toLowerCase()] = value
+      }
+    }
   })
 }

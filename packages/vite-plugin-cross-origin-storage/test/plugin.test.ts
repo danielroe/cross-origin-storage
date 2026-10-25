@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { build } from 'vite'
+import { build, preview } from 'vite'
 import { build as build7 } from 'vite7'
-import { cosPlugin, RECIPE } from '../src/index'
+import { cosHeaders, cosPlugin, RECIPE } from '../src/index'
 import { writeOptions } from '../src/loader'
 import type { CosManifest, CosPluginOptions } from '../src/index'
 import type { Alias, Plugin } from 'vite'
@@ -36,7 +36,7 @@ async function buildApp(
   entry: string,
   packages: Array<string | RegExp>,
   alias: Alias[],
-  options: { sourcemap?: boolean, build?: BuildFn, warnings?: string[], plugins?: Plugin[], share?: CosPluginOptions['share'] } = {},
+  options: { sourcemap?: boolean, build?: BuildFn, warnings?: string[], plugins?: Plugin[], share?: CosPluginOptions['share'], onGenerated?: CosPluginOptions['onGenerated'] } = {},
 ): Promise<Built> {
   mkdirSync(scratchRoot, { recursive: true })
   const root = mkdtempSync(join(scratchRoot, 'app-'))
@@ -53,7 +53,7 @@ async function buildApp(
     root,
     logLevel: 'error',
     resolve: { alias },
-    plugins: [cosPlugin({ packages, ...options.share !== undefined ? { share: options.share } : {} }), ...options.plugins ?? []],
+    plugins: [cosPlugin({ packages, ...options.share !== undefined ? { share: options.share } : {}, ...options.onGenerated ? { onGenerated: options.onGenerated } : {} }), ...options.plugins ?? []],
     build: {
       outDir,
       emptyOutDir: true,
@@ -638,6 +638,44 @@ describe('cosPlugin share', () => {
   it('fails the build when a share function returns an invalid scope', async () => {
     await expect(buildApp(vueEntry, vuePackages, vueAlias, { share: () => ['http://a.example'] }))
       .rejects.toThrow(/share\("@?vue[^"]*"\).*only https: and loopback http:/)
+  }, 120_000)
+
+  it('derives the Cross-Origin-Storage-Allow-Origin header from the union of every list', () => {
+    expect(cosHeaders([])).toEqual({})
+    expect(cosHeaders(['*', 'same-site', undefined])).toEqual({})
+    expect(cosHeaders([['https://b.example/'], '*', ['https://a.example', 'https://b.example']]))
+      .toEqual({ 'Cross-Origin-Storage-Allow-Origin': 'https://a.example, https://b.example' })
+    expect(() => cosHeaders([['http://a.example']])).toThrow(/only https: and loopback http:/)
+  })
+
+  it('hands the page headers to `onGenerated`', async () => {
+    const pages: Array<{ headers: Record<string, string> }> = []
+    await buildApp(vueEntry, vuePackages, vueAlias, {
+      share: name => name === 'vue' ? '*' : ['https://b.example', 'https://a.example'],
+      onGenerated: (_content, page) => pages.push(page),
+    })
+    expect(pages).toEqual([{ headers: { 'Cross-Origin-Storage-Allow-Origin': 'https://a.example, https://b.example' } }])
+
+    pages.length = 0
+    await buildApp(vueEntry, vuePackages, vueAlias, { onGenerated: (_content, page) => pages.push(page) })
+    expect(pages).toEqual([{ headers: {} }])
+  }, 240_000)
+
+  it('sends the header from `vite preview` for a build that needs it', async () => {
+    const share: CosPluginOptions['share'] = name => name === 'vue' ? 'same-site' : ['https://a.example']
+    const listed = await buildApp(vueEntry, vuePackages, vueAlias, { share })
+    const headerOf = async (outDir: string, plugin: Plugin): Promise<string | null> => {
+      const server = await preview({ root: dirname(outDir), logLevel: 'error', plugins: [plugin], build: { outDir }, preview: { port: 0, host: '127.0.0.1' } })
+      try {
+        const response = await fetch(server.resolvedUrls!.local[0]!)
+        return response.headers.get('cross-origin-storage-allow-origin')
+      }
+      finally {
+        await server.close()
+      }
+    }
+    expect(await headerOf(listed.outDir, cosPlugin({ packages: vuePackages, share }))).toBe('https://a.example')
+    expect(await headerOf(everyone.outDir, cosPlugin({ packages: vuePackages }))).toBeNull()
   }, 120_000)
 
   it('maps each scope to the getFileHandle() options that store it', () => {

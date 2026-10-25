@@ -1,5 +1,5 @@
-import { defineNuxtModule, addServerPlugin, addVitePlugin, createResolver } from '@nuxt/kit'
-import { cosPlugin } from 'vite-plugin-cross-origin-storage'
+import { defineNuxtModule, addServerPlugin, addVitePlugin, createResolver, extendRouteRules } from '@nuxt/kit'
+import { cosHeaders, cosPlugin } from 'vite-plugin-cross-origin-storage'
 import type { CosPluginOptions } from 'vite-plugin-cross-origin-storage'
 import { resolveBuildAssetsBase } from './runtime/utils/assets-base'
 
@@ -34,9 +34,20 @@ export default defineNuxtModule<ModuleOptions>({
     const resolver = createResolver(import.meta.url)
 
     let scriptContent = ''
+    let headers: Record<string, string> = {}
 
     nuxt.options.nitro.virtual ||= {}
-    nuxt.options.nitro.virtual['virtual:cos-loader'] = () => `export default ${JSON.stringify(scriptContent)}`
+    nuxt.options.nitro.virtual['virtual:cos-loader'] = () => `export default ${JSON.stringify(scriptContent)}\nexport const headers = ${JSON.stringify(headers)}`
+
+    // Prerendered pages are served without Nitro rendering them, so headers that are known up
+    // front also go into the route rules, which static presets turn into their host's header
+    // config. A `share` function is only resolved during the build, too late for route rules.
+    if (typeof options.share !== 'function') {
+      const staticHeaders = cosHeaders([options.share])
+      if (Object.keys(staticHeaders).length) {
+        extendRouteRules('/**', { headers: staticHeaders })
+      }
+    }
 
     addServerPlugin(resolver.resolve('./runtime/server/plugins/inject'))
 
@@ -46,8 +57,9 @@ export default defineNuxtModule<ModuleOptions>({
         packages: options.packages,
         ...options.share !== undefined ? { share: options.share } : {},
         base: assetsBase,
-        onGenerated: (content) => {
+        onGenerated: (content, page) => {
           scriptContent = content
+          headers = page.headers
         },
       })
     }, { client: true, server: false })

@@ -1,5 +1,5 @@
 import { assertType, describe, expectTypeOf, it } from 'vitest'
-import { cosPlugin, RECIPE } from '../src/index'
+import { cosHeaders, cosPlugin, RECIPE } from '../src/index'
 import type { CosManifest, CosPluginOptions, CosShare } from '../src/index'
 import type { Plugin } from 'vite'
 
@@ -41,6 +41,16 @@ describe('cosPlugin', () => {
     assertType<CosPluginOptions>({ packages: ['vue'], share: 'same-origin' })
   })
 
+  it('hands `onGenerated` the page headers', () => {
+    assertType<CosPluginOptions>({
+      packages: ['vue'],
+      onGenerated: (scriptContent, page) => {
+        expectTypeOf(scriptContent).toEqualTypeOf<string>()
+        expectTypeOf(page.headers).toEqualTypeOf<Record<string, string>>()
+      },
+    })
+  })
+
   it('rejects unknown options', () => {
     // @ts-expect-error unknown option
     assertType<CosPluginOptions>({ packages: ['vue'], unknown: true })
@@ -54,6 +64,13 @@ describe('cosPlugin', () => {
 describe('RECIPE', () => {
   it('is typed as a number', () => {
     expectTypeOf(RECIPE).toEqualTypeOf<number>()
+  })
+})
+
+describe('cosHeaders', () => {
+  it('maps share modes to response headers', () => {
+    expectTypeOf(cosHeaders).parameter(0).toEqualTypeOf<Iterable<CosShare | undefined>>()
+    expectTypeOf(cosHeaders).returns.toEqualTypeOf<Record<string, string>>()
   })
 })
 

@@ -71,7 +71,7 @@ For local testing it's safest to load the extension unpacked from [`web-ai-commu
 | `base` | `string` | Vite's `base` + `build.assetsDir` | Public path the chunks are served from. |
 | `share` | `'*' \| 'same-site' \| string[] \| (name: string \| undefined) => …` | `'*'` | Who may read the chunks once they are stored in COS. See [Sharing](#sharing). |
 | `loaderEntry` | `string` | bundled loader | Path to a custom runtime loader entry. |
-| `onGenerated` | `(scriptContent: string) => void` | (unset) | Receives the loader `<script>` body once chunks are emitted. SSR frameworks inject it into their own rendered HTML and render any import map in the page as `<script type="cos-importmap">`; when omitted the plugin does both in `index.html`. |
+| `onGenerated` | `(scriptContent: string, page: { headers: Record<string, string> }) => void` | (unset) | Receives the loader `<script>` body once chunks are emitted. SSR frameworks inject it into their own rendered HTML and render any import map in the page as `<script type="cos-importmap">`; when omitted the plugin does both in `index.html`. `page.headers` are the response headers those pages must send (see [Sharing](#sharing)). |
 
 ## Sharing
 
@@ -94,7 +94,7 @@ cosPlugin({
 
 A few things to know:
 
-- **List sharing needs a response header.** The browser only honours listed origins that the page's `Cross-Origin-Storage-Allow-Origin` response header also lists, and silently drops the rest. The plugin cannot set production headers, so send it from your server, e.g. `Cross-Origin-Storage-Allow-Origin: https://write.acme.example, https://calc.acme.example`.
+- **List sharing needs a response header on the page.** The browser only honours listed origins that the `Cross-Origin-Storage-Allow-Origin` response header also lists, and drops the rest. The loader writes with `getFileHandle()`, so the header that counts is the one on the HTML page that runs the loader. Headers on the chunks themselves have no effect, even from a CDN. The value must list every origin any chunk is shared with, e.g. `Cross-Origin-Storage-Allow-Origin: https://calc.acme.example, https://write.acme.example`. `cosHeaders()` computes it, and `onGenerated` receives it as `page.headers`. `vite preview` sends it for you, but production servers need it in their own config.
 - **The browser may cap the list.** Its maximum length is implementation-defined; extra origins are dropped.
 - **Sharing only ever widens.** If another site stores the same chunk with `'*'`, it becomes readable by every origin regardless of what this site asked for. Use a list to share more narrowly, not to keep bytes private.
 - **The scope never changes a chunk's bytes.** It is recorded in the manifest (`share` on each chunk, absent for `'*'`), not in the chunk, so builds with different scopes still emit the same hashes and share each other's chunks. If two packages emit byte-identical chunks with different scopes, the chunk is stored with both.
