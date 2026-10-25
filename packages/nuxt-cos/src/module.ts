@@ -1,5 +1,6 @@
 import { defineNuxtModule, addServerPlugin, addVitePlugin, createResolver } from '@nuxt/kit'
 import { cosPlugin } from 'vite-plugin-cross-origin-storage'
+import type { CosPluginOptions } from 'vite-plugin-cross-origin-storage'
 import { resolveBuildAssetsBase } from './runtime/utils/assets-base'
 
 export interface ModuleOptions {
@@ -9,6 +10,12 @@ export interface ModuleOptions {
    * string is treated as an exact match.
    */
   packages: Array<string | RegExp>
+  /**
+   * Who may read the managed chunks once they are stored: every origin (`'*'`, the default), only
+   * same-site origins (`'same-site'`), a list of origins, or a function that picks per package.
+   * See `vite-plugin-cross-origin-storage`.
+   */
+  share?: CosPluginOptions['share']
 }
 
 export default defineNuxtModule<ModuleOptions>({
@@ -37,6 +44,7 @@ export default defineNuxtModule<ModuleOptions>({
       const assetsBase = resolveBuildAssetsBase(nuxt.options.app)
       return cosPlugin({
         packages: options.packages,
+        ...options.share !== undefined ? { share: options.share } : {},
         base: assetsBase,
         onGenerated: (content) => {
           scriptContent = content

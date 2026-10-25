@@ -41,6 +41,7 @@ export default defineNuxtConfig({
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `packages` | `Array<string \| RegExp>` | `[/^(?:vue$\|@vue\/)/]` | Packages to extract into COS chunks. |
+| `share` | `'*' \| 'same-site' \| string[] \| (name) => …` | `'*'` | Who may read the chunks once stored. See [Sharing](https://github.com/danielroe/cross-origin-storage/tree/main/packages/vite-plugin-cross-origin-storage#sharing). A list of origins also needs a `Cross-Origin-Storage-Allow-Origin` response header on your pages, for example through `routeRules`. |
 
 ## Trying it out
 

@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
 import { build as build7 } from 'vite7'
 import { cosPlugin, RECIPE } from '../src/index'
+import { writeOptions } from '../src/loader'
+import type { CosManifest, CosPluginOptions } from '../src/index'
 import type { Alias, Plugin } from 'vite'
 
 type BuildFn = typeof build
@@ -27,13 +29,14 @@ interface Built {
   appChunks: () => string[]
   read: (file: string) => string
   html: () => string
+  manifest: () => CosManifest
 }
 
 async function buildApp(
   entry: string,
   packages: Array<string | RegExp>,
   alias: Alias[],
-  options: { sourcemap?: boolean, build?: BuildFn, warnings?: string[], plugins?: Plugin[] } = {},
+  options: { sourcemap?: boolean, build?: BuildFn, warnings?: string[], plugins?: Plugin[], share?: CosPluginOptions['share'] } = {},
 ): Promise<Built> {
   mkdirSync(scratchRoot, { recursive: true })
   const root = mkdtempSync(join(scratchRoot, 'app-'))
@@ -50,7 +53,7 @@ async function buildApp(
     root,
     logLevel: 'error',
     resolve: { alias },
-    plugins: [cosPlugin({ packages }), ...options.plugins ?? []],
+    plugins: [cosPlugin({ packages, ...options.share !== undefined ? { share: options.share } : {} }), ...options.plugins ?? []],
     build: {
       outDir,
       emptyOutDir: true,
@@ -74,7 +77,36 @@ async function buildApp(
     read,
     specifiersOf: file => specifiers(read(file)),
     html: () => readFileSync(join(outDir, 'index.html'), 'utf8'),
+    manifest: () => extractManifest(readFileSync(join(outDir, 'index.html'), 'utf8')),
   }
+}
+
+/** The manifest JSON the plugin inlined into the loader `<script>`. */
+function extractManifest(html: string): CosManifest {
+  const start = html.indexOf('{"base":')
+  let depth = 0
+  let inString = false
+  for (let i = start; i < html.length; i++) {
+    const c = html[i]
+    if (inString) {
+      if (c === '\\') {
+        i++
+      }
+      else if (c === '"') {
+        inString = false
+      }
+    }
+    else if (c === '"') {
+      inString = true
+    }
+    else if (c === '{') {
+      depth++
+    }
+    else if (c === '}' && --depth === 0) {
+      return JSON.parse(html.slice(start, i + 1))
+    }
+  }
+  throw new Error('no manifest in index.html')
 }
 
 /** Write a package into `parent`, by default the `node_modules` the scratch apps resolve from. */
@@ -510,6 +542,110 @@ describe('cosPlugin with package-internal imports', () => {
     )
     expect(app.cosChunks()).toHaveLength(1)
   }, 120_000)
+})
+
+describe('cosPlugin share', () => {
+  const vueEntry = 'import { ref } from "vue"\ndocument.body.dataset.count = String(ref(0).value)\n'
+  const vuePackages = [/^(?:vue$|@vue\/)/]
+  const vueAlias = [{ find: 'vue', replacement: resolvePkg('vue', 'dist/vue.runtime.esm-bundler.js') }]
+  let everyone: Built
+
+  beforeAll(async () => {
+    everyone = await buildApp(vueEntry, vuePackages, vueAlias)
+  }, 120_000)
+
+  it('leaves `share` out of the manifest by default, which means every origin', () => {
+    const chunks = Object.values(everyone.manifest().chunks)
+    expect(chunks.length).toBeGreaterThan(0)
+    for (const chunk of chunks) {
+      expect(chunk).not.toHaveProperty('share')
+    }
+  })
+
+  it('records same-site sharing without changing a single chunk byte', async () => {
+    const sameSite = await buildApp(vueEntry, vuePackages, vueAlias, { share: 'same-site' })
+    for (const chunk of Object.values(sameSite.manifest().chunks)) {
+      expect(chunk.share).toBe('same-site')
+    }
+    expect(sameSite.cosChunks().sort()).toEqual(everyone.cosChunks().sort())
+  }, 120_000)
+
+  it('normalises a list of origins to sorted, unique origins', async () => {
+    const listed = await buildApp(vueEntry, vuePackages, vueAlias, {
+      share: ['https://write.example/', 'https://calculate.example', 'https://write.example'],
+    })
+    for (const chunk of Object.values(listed.manifest().chunks)) {
+      expect(chunk.share).toEqual(['https://calculate.example', 'https://write.example'])
+    }
+    expect(listed.cosChunks().sort()).toEqual(everyone.cosChunks().sort())
+  }, 120_000)
+
+  it('picks the scope per package', async () => {
+    const names: Array<string | undefined> = []
+    const mixed = await buildApp(vueEntry, vuePackages, vueAlias, {
+      share: (name) => {
+        names.push(name)
+        return name === 'vue' ? '*' : ['https://a.example']
+      },
+    })
+    const chunks = Object.values(mixed.manifest().chunks)
+    expect(chunks.find(chunk => chunk.name === 'vue')).not.toHaveProperty('share')
+    for (const chunk of chunks.filter(chunk => chunk.name !== 'vue')) {
+      expect(chunk.share).toEqual(['https://a.example'])
+    }
+    // Resolved once per package, not once per module.
+    expect(names.length).toBe(new Set(names).size)
+  }, 120_000)
+
+  it('stores a chunk that two packages emit with both their scopes', async () => {
+    for (const name of ['cos-fixture-share-x', 'cos-fixture-share-y']) {
+      writePackage(name, {
+        'package.json': `{"name":"${name}","type":"module","main":"index.js"}`,
+        'index.js': 'export const twin = 1\n',
+      })
+    }
+    const twins = await buildApp(
+      'import { twin as x } from "cos-fixture-share-x"\nimport { twin as y } from "cos-fixture-share-y"\ndocument.title = String(x + y)\n',
+      ['cos-fixture-share-x', 'cos-fixture-share-y'],
+      [],
+      { share: name => name === 'cos-fixture-share-x' ? ['https://x.example'] : ['https://y.example'] },
+    )
+    expect(twins.cosChunks()).toHaveLength(1)
+    for (const chunk of Object.values(twins.manifest().chunks)) {
+      expect(chunk.share).toEqual(['https://x.example', 'https://y.example'])
+    }
+  }, 120_000)
+
+  it.each([
+    [[], /use 'same-site'/],
+    [['https://a.example/path'], /is not an origin/],
+    [['https://a.example?q'], /is not an origin/],
+    [['http://a.example'], /only https: and loopback http:/],
+    [['chrome-extension://abcdefghijklmnop'], /only https: and loopback http:/],
+    [['a.example'], /is not a valid origin/],
+    ['same-origin', /must be '\*', 'same-site' or a list of origins/],
+  ])('rejects %j when the plugin is created', (share, message) => {
+    expect(() => cosPlugin({ packages: ['vue'], share: share as CosPluginOptions['share'] })).toThrow(message)
+  })
+
+  it('accepts loopback http: origins', () => {
+    expect(() => cosPlugin({
+      packages: ['vue'],
+      share: ['http://localhost:3000', 'http://app.localhost', 'http://127.0.0.1:8080', 'http://[::1]'],
+    })).not.toThrow()
+  })
+
+  it('fails the build when a share function returns an invalid scope', async () => {
+    await expect(buildApp(vueEntry, vuePackages, vueAlias, { share: () => ['http://a.example'] }))
+      .rejects.toThrow(/share\("@?vue[^"]*"\).*only https: and loopback http:/)
+  }, 120_000)
+
+  it('maps each scope to the getFileHandle() options that store it', () => {
+    expect(writeOptions()).toEqual({ create: true, origins: '*' })
+    expect(writeOptions('*')).toEqual({ create: true, origins: '*' })
+    expect(writeOptions('same-site')).toEqual({ create: true })
+    expect(writeOptions(['https://a.example'])).toEqual({ create: true, origins: ['https://a.example'] })
+  })
 })
 
 describe('cosPlugin under Vite 7 (rollup)', () => {

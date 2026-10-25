@@ -7,9 +7,9 @@ import { rolldown } from 'rolldown'
 import { parseAst } from 'rolldown/parseAst'
 import type { Plugin } from 'vite'
 import type { SourceMap } from 'rolldown'
-import type { CosManifest } from './loader'
+import type { CosManifest, CosShare } from './loader'
 
-export type { CosManifest }
+export type { CosManifest, CosShare }
 
 const MANIFEST_PLACEHOLDER = '__COS_MANIFEST__'
 
@@ -53,6 +53,15 @@ export interface CosPluginOptions {
    */
   base?: string
   /**
+   * Who may read the managed chunks once they are stored in Cross-Origin Storage: every origin
+   * (`'*'`, the default), only same-site origins (`'same-site'`), or a list of origins, each of
+   * which also covers its same-site origins. A function picks per chunk, from the npm package it
+   * was bundled from (`undefined` when that could not be derived). List sharing only takes effect
+   * for origins that the page's `Cross-Origin-Storage-Allow-Origin` response header also lists.
+   * This never changes a chunk's bytes, only how the loader stores it.
+   */
+  share?: CosShare | ((name: string | undefined) => CosShare)
+  /**
    * Path to the runtime loader entry to bundle into the injected `<script>`.
    * Defaults to the bundled loader. Override only to swap the loader runtime.
    */
@@ -66,6 +75,84 @@ export interface CosPluginOptions {
    * plain client builds.
    */
   onGenerated?: (scriptContent: string) => void
+}
+
+/**
+ * Whether `url` is an origin that can itself call the COS API, and so a meaningful grant: `https:`,
+ * or loopback `http:` (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`).
+ */
+function isPotentiallyTrustworthy(url: URL): boolean {
+  if (url.protocol === 'https:') {
+    return true
+  }
+  if (url.protocol !== 'http:') {
+    return false
+  }
+  const host = url.hostname
+  return host === 'localhost' || host.endsWith('.localhost') || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host)
+}
+
+/** Validate a `share` value at build time, normalising a list to sorted, unique origins. */
+function normalizeShare(share: unknown, context: string): CosShare {
+  if (share === '*' || share === 'same-site') {
+    return share
+  }
+  if (!Array.isArray(share)) {
+    throw new TypeError(`[cos] ${context}: \`share\` must be '*', 'same-site' or a list of origins, got ${JSON.stringify(share)}`)
+  }
+  if (!share.length) {
+    throw new TypeError(`[cos] ${context}: an empty origins list shares with no one beyond same-site origins; use 'same-site' instead`)
+  }
+  const origins = new Set<string>()
+  for (const entry of share) {
+    let url: URL
+    try {
+      url = new URL(String(entry))
+    }
+    catch {
+      throw new TypeError(`[cos] ${context}: ${JSON.stringify(entry)} is not a valid origin`)
+    }
+    // Checked first: a non-http(s) scheme has an opaque origin, which no path check can explain.
+    if (!isPotentiallyTrustworthy(url)) {
+      throw new TypeError(`[cos] ${context}: ${JSON.stringify(entry)} cannot use Cross-Origin Storage; only https: and loopback http: origins can be listed`)
+    }
+    if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
+      throw new TypeError(`[cos] ${context}: ${JSON.stringify(entry)} is not an origin; drop its path, query and fragment (${url.origin})`)
+    }
+    origins.add(url.origin)
+  }
+  return [...origins].sort()
+}
+
+/**
+ * The scope that covers both `a` and `b`. Two modules with identical bytes are one chunk, so if
+ * they ask for different scopes the chunk is stored with both, the same way the API merges writes.
+ */
+function widenShare(a: CosShare, b: CosShare): CosShare {
+  if (a === '*' || b === '*') {
+    return '*'
+  }
+  if (a === 'same-site') {
+    return b
+  }
+  if (b === 'same-site') {
+    return a
+  }
+  return [...new Set([...a, ...b])].sort()
+}
+
+function shareResolver(share: CosPluginOptions['share'] = '*'): (name: string | undefined) => CosShare {
+  if (typeof share !== 'function') {
+    const normalized = normalizeShare(share, 'share')
+    return () => normalized
+  }
+  const cache = new Map<string | undefined, CosShare>()
+  return (name) => {
+    if (!cache.has(name)) {
+      cache.set(name, normalizeShare(share(name), `share(${JSON.stringify(name)})`))
+    }
+    return cache.get(name)!
+  }
 }
 
 function contentSpecifier(hash: string): string {
@@ -317,6 +404,8 @@ function joinBase(base: string, assetsDir: string): string {
 export function cosPlugin(options: CosPluginOptions): Plugin {
   const packages = toMatchers(options.packages)
   const loaderEntry = options.loaderEntry ?? defaultLoaderEntry()
+  // Validated up front, so a malformed static `share` fails the build before any work.
+  const shareOf = shareResolver(options.share)
 
   const collected = new Set<string>()
   let assetsDir = 'assets'
@@ -465,6 +554,7 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
       const specifiers = new Map<string, string>()
       const managed: CosManifest['chunks'] = {}
       const emitted = new Set<string>()
+      const shares = new Map<string, CosShare>()
 
       // Standalone cos chunks have no downstream sourcemap, so none is kept.
       const rewriteDeps = (id: string, specifierOf: (dep: string) => string): string => {
@@ -480,7 +570,10 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
         const hash = createHash('sha256').update(code).digest('hex')
         const key = specifier ?? contentSpecifier(hash)
         specifiers.set(id, key)
-        managed[key] = { file: `${hash}.js`, hash, name: packageNameFromId(id), size: Buffer.byteLength(code) }
+        const name = packageNameFromId(id)
+        managed[key] = { file: `${hash}.js`, hash, name, size: Buffer.byteLength(code) }
+        const share = shareOf(name)
+        shares.set(hash, shares.has(hash) ? widenShare(shares.get(hash)!, share) : share)
         if (!emitted.has(hash)) {
           emitted.add(hash)
           this.emitFile({ type: 'asset', fileName: `${assetPrefix}${hash}.js`, source: code })
@@ -538,6 +631,15 @@ export function cosPlugin(options: CosPluginOptions): Plugin {
 
       if (!entry) {
         return
+      }
+
+      // The scope lives only in the manifest, never in the chunk bytes, so it does not change any
+      // hash. `'*'` is the default and is left out.
+      for (const chunk of Object.values(managed)) {
+        const share = shares.get(chunk.hash)
+        if (share && share !== '*') {
+          chunk.share = share
+        }
       }
 
       const manifest: CosManifest = { base, recipe: RECIPE, entry, chunks: managed, ...(assetSpecifiers.size ? { assets } : {}) }

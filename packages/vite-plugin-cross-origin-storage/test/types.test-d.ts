@@ -1,6 +1,6 @@
 import { assertType, describe, expectTypeOf, it } from 'vitest'
 import { cosPlugin, RECIPE } from '../src/index'
-import type { CosManifest, CosPluginOptions } from '../src/index'
+import type { CosManifest, CosPluginOptions, CosShare } from '../src/index'
 import type { Plugin } from 'vite'
 
 describe('cosPlugin', () => {
@@ -26,6 +26,21 @@ describe('cosPlugin', () => {
     })
   })
 
+  it('accepts every share mode, statically or per package', () => {
+    assertType<CosPluginOptions>({ packages: ['vue'], share: '*' })
+    assertType<CosPluginOptions>({ packages: ['vue'], share: 'same-site' })
+    assertType<CosPluginOptions>({ packages: ['vue'], share: ['https://a.example', 'https://b.example'] })
+    assertType<CosPluginOptions>({
+      packages: ['vue'],
+      share: (name) => {
+        expectTypeOf(name).toEqualTypeOf<string | undefined>()
+        return name === 'vue' ? '*' : 'same-site'
+      },
+    })
+    // @ts-expect-error not a share mode
+    assertType<CosPluginOptions>({ packages: ['vue'], share: 'same-origin' })
+  })
+
   it('rejects unknown options', () => {
     // @ts-expect-error unknown option
     assertType<CosPluginOptions>({ packages: ['vue'], unknown: true })
@@ -42,13 +57,19 @@ describe('RECIPE', () => {
   })
 })
 
+describe('CosShare', () => {
+  it('is every origin, same-site or a list of origins', () => {
+    expectTypeOf<CosShare>().toEqualTypeOf<'*' | 'same-site' | string[]>()
+  })
+})
+
 describe('CosManifest', () => {
   it('describes the manifest shape consumed by the loader', () => {
     expectTypeOf<CosManifest>().toEqualTypeOf<{
       base: string
       recipe: number
       entry: { specifier: string, file: string }
-      chunks: Record<string, { file: string, hash: string, name?: string, size: number }>
+      chunks: Record<string, { file: string, hash: string, name?: string, size: number, share?: 'same-site' | string[] }>
       assets?: Record<string, { file: string, hash: string, name?: string }>
     }>()
   })

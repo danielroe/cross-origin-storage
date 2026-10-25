@@ -69,8 +69,37 @@ For local testing it's safest to load the extension unpacked from [`web-ai-commu
 | --- | --- | --- | --- |
 | `packages` | `Array<string \| RegExp>` | (required) | Packages to extract into COS chunks. Matched against the imported specifier; a plain string is an exact match. Transitive dependencies are collected automatically. |
 | `base` | `string` | Vite's `base` + `build.assetsDir` | Public path the chunks are served from. |
+| `share` | `'*' \| 'same-site' \| string[] \| (name: string \| undefined) => …` | `'*'` | Who may read the chunks once they are stored in COS. See [Sharing](#sharing). |
 | `loaderEntry` | `string` | bundled loader | Path to a custom runtime loader entry. |
 | `onGenerated` | `(scriptContent: string) => void` | (unset) | Receives the loader `<script>` body once chunks are emitted. SSR frameworks inject it into their own rendered HTML and render any import map in the page as `<script type="cos-importmap">`; when omitted the plugin does both in `index.html`. |
+
+## Sharing
+
+`share` decides who may read a chunk once the loader has stored it in COS. It maps directly onto the API's `origins` option:
+
+| `share` | Who can read the chunk | Notes |
+| --- | --- | --- |
+| `'*'` (default) | Every origin | An origin outside the other grants only learns the chunk is present if its hash is on the [Public Hash List](https://github.com/WICG/cross-origin-storage/tree/main/public-hash-list). Right for widely used packages such as `vue`. |
+| `'same-site'` | Origins same-site with the one that stored it | The API's own default (`origins` omitted). Sharing across `app.example.com` and `docs.example.com`, but nowhere else. |
+| `['https://a.example', …]` | The listed origins and their same-site origins, plus the same-site default | For packages you want shared between your own sites only, such as an internal design system. Entries must be `https:` or loopback `http:` origins. |
+
+A function picks the scope per chunk, from the npm package it was bundled from (`undefined` when that could not be derived):
+
+```ts
+cosPlugin({
+  packages: [/^(?:vue$|@vue\/)/, '@acme/ui'],
+  share: name => name === '@acme/ui' ? ['https://write.acme.example', 'https://calc.acme.example'] : '*',
+})
+```
+
+A few things to know:
+
+- **List sharing needs a response header.** The browser only honours listed origins that the page's `Cross-Origin-Storage-Allow-Origin` response header also lists, and silently drops the rest. The plugin cannot set production headers, so send it from your server, e.g. `Cross-Origin-Storage-Allow-Origin: https://write.acme.example, https://calc.acme.example`.
+- **The browser may cap the list.** Its maximum length is implementation-defined; extra origins are dropped.
+- **Sharing only ever widens.** If another site stores the same chunk with `'*'`, it becomes readable by every origin regardless of what this site asked for. Use a list to share more narrowly, not to keep bytes private.
+- **The scope never changes a chunk's bytes.** It is recorded in the manifest (`share` on each chunk, absent for `'*'`), not in the chunk, so builds with different scopes still emit the same hashes and share each other's chunks. If two packages emit byte-identical chunks with different scopes, the chunk is stored with both.
+
+Invalid values fail the build: a static `share` when the plugin is created, a function's result when it is first called for a package.
 
 ## Browser support
 
