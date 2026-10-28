@@ -10,7 +10,7 @@
     "preview": "nuxt preview"
   },
   "dependencies": {
-    "nuxt": "4.6.2",
+    "nuxt": "4.6.3",
     "nuxt-cos": "workspace:*",
     "vue": "3.5.44"
   },
