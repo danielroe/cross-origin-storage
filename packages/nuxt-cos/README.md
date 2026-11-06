@@ -41,6 +41,17 @@ export default defineNuxtConfig({
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `packages` | `Array<string \| RegExp>` | `[/^(?:vue$\|@vue\/)/]` | Packages to extract into COS chunks. |
+| `share` | `'*' \| 'same-site' \| string[] \| (name) => …` | `'*'` | Who may read the chunks once stored. See [Sharing](https://github.com/danielroe/cross-origin-storage/tree/main/packages/vite-plugin-cross-origin-storage#sharing). For a list of origins, the module also sends the `Cross-Origin-Storage-Allow-Origin` header the pages need (see below). |
+
+## Sharing with a list of origins
+
+When `share` lists origins, the pages that run the COS loader must send a `Cross-Origin-Storage-Allow-Origin` response header listing those origins. Without it, the browser drops them and stores the chunks same-site only. The module sends the header for you:
+
+- **Server-rendered pages** get it from the module's Nitro plugin, for every `share`, including a function.
+- **A static list** is also added to `routeRules` for `/**`, which Nitro's static hosting presets (Netlify, Vercel, Cloudflare, and others) turn into their host's header config. This covers prerendered pages and `nuxt generate`.
+- **A `share` function with prerendered pages or `nuxt generate`** is only resolved during the build, too late for `routeRules`. Configure the header on your host yourself.
+
+A `Cross-Origin-Storage-Allow-Origin` header your app already sets, for example through `routeRules`, takes precedence.
 
 ## Trying it out
 
