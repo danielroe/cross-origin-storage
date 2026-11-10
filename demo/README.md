@@ -34,3 +34,16 @@ What to look for:
 - The page still server-renders and hydrates normally.
 
 Without a COS-capable browser, the loader falls back to fetching each chunk over the network, so this confirms the chunking and loader work end-to-end, but not the cross-origin sharing itself. For that, see the [nuxt-cos README](../packages/nuxt-cos/README.md#trying-it-out).
+
+## Trying the sharing scopes
+
+The demo shares the `vue` chunks with every origin (`'*'`), which is what a widely used package should do. To see the other scopes of the [`share` option](../packages/vite-plugin-cross-origin-storage/README.md#sharing), uncomment one of the `share` lines in [`nuxt.config.ts`](./nuxt.config.ts), then build and preview again:
+
+- The **Shared with** column of the table on the page shows the scope recorded for each chunk.
+- With a list of origins, the module also sends the `Cross-Origin-Storage-Allow-Origin` header the page needs:
+
+  ```bash
+  curl -sI http://localhost:3000/ | grep -i cross-origin-storage
+  ```
+
+Seeing a list take effect in the browser needs two sites that are cross-site to each other. Two ports on `localhost` are the same site, so the same-site default already covers them. The [Cross-Origin Storage extension](https://github.com/web-ai-community/cross-origin-storage-extension) only runs on `https:`, `http://localhost`, and `http://*.test` pages, so locally that means two `.test` hostnames in `/etc/hosts`.

@@ -26,6 +26,7 @@
             <th>Package</th>
             <th>Hash</th>
             <th>Chunk</th>
+            <th>Shared with</th>
           </tr>
         </thead>
         <tbody>
@@ -33,6 +34,7 @@
             <td>{{ resource.name ?? '(unknown)' }}</td>
             <td><code>{{ resource.hash.slice(0, 12) }}…</code></td>
             <td><a :href="resource.href">{{ resource.file }}</a></td>
+            <td>{{ resource.sharedWith }}</td>
           </tr>
         </tbody>
       </table>
@@ -50,7 +52,8 @@ pnpm --filter nuxt-cos-demo preview</code></pre>
         chunk files, and view source on the page: the default Nuxt entry
         script is replaced with a <code>&lt;script id="cos-loader"&gt;</code>.
         The table above (populated once the loader has run) shows which
-        npm package produced each chunk.
+        npm package produced each chunk, and who may read it once it is
+        stored, as set by the <code>share</code> option.
       </p>
     </section>
   </main>
@@ -58,7 +61,7 @@ pnpm --filter nuxt-cos-demo preview</code></pre>
 
 <script setup lang="ts">
 import { onMounted, ref, version as vueVersion } from 'vue'
-import type { CosManifest } from 'vite-plugin-cross-origin-storage'
+import type { CosManifest, CosShare } from 'vite-plugin-cross-origin-storage'
 
 useHead({
   title: 'nuxt-cos demo',
@@ -66,7 +69,18 @@ useHead({
 
 const count = ref(0)
 
-const resources = ref<Array<{ specifier: string, name?: string, hash: string, file: string, href: string }>>([])
+const resources = ref<Array<{ specifier: string, name?: string, hash: string, file: string, href: string, sharedWith: string }>>([])
+
+/** The manifest leaves `share` out for chunks shared with every origin. */
+function describeShare(share: CosShare | undefined): string {
+  if (share === undefined || share === '*') {
+    return 'every origin'
+  }
+  if (share === 'same-site') {
+    return 'same-site origins'
+  }
+  return share.join(', ')
+}
 
 onMounted(() => {
   const manifest = (window as unknown as { __cosManifest?: CosManifest }).__cosManifest
@@ -79,6 +93,7 @@ onMounted(() => {
     hash: chunk.hash,
     file: chunk.file,
     href: manifest.base + chunk.file,
+    sharedWith: describeShare(chunk.share),
   }))
 })
 </script>

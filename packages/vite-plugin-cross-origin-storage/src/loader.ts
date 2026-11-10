@@ -7,6 +7,18 @@ declare global {
   }
 }
 
+/**
+ * Who may read a chunk once it is stored in Cross-Origin Storage:
+ *
+ * - `'*'`: every origin. Origins outside the other grants only learn the chunk is present if its
+ *   hash is on the Public Hash List.
+ * - `'same-site'`: only origins same-site with the site that stored it (the API's default).
+ * - a list of origins: those origins and the origins same-site with each of them, on top of the
+ *   same-site default. Only takes effect for origins that the document's
+ *   `Cross-Origin-Storage-Allow-Origin` response header also lists.
+ */
+export type CosShare = '*' | 'same-site' | string[]
+
 export interface CosManifest {
   /** Public base path that managed chunks are served from, e.g. `/_nuxt/`. */
   base: string
@@ -22,15 +34,27 @@ export interface CosManifest {
    * is `cos1:<hash>`, or `cos1:<group hash>-<n>` for a module in an import cycle. `hash` is the
    * SHA-256 of the chunk's bytes and `size` their length. `name` is the npm package the chunk was
    * bundled from (e.g. `vue`, `@vue/reactivity`), when it could be derived from the resolved
-   * module path; absent for chunks it couldn't be.
+   * module path; absent for chunks it couldn't be. `share` is who may read the chunk once it is
+   * stored (see `CosShare`); absent means every origin (`'*'`).
    */
-  chunks: Record<string, { file: string, hash: string, name?: string, size: number }>
+  chunks: Record<string, { file: string, hash: string, name?: string, size: number, share?: Exclude<CosShare, '*'> }>
   /**
    * Map of content-addressed specifier to `{ file, hash, name }` for every file a managed chunk
    * references through `new URL(…, import.meta.url)`, such as a decoder's `.wasm`. The import map
    * points these at the network, so they load only when the app requests them.
    */
   assets?: Record<string, { file: string, hash: string, name?: string }>
+}
+
+/**
+ * The `getFileHandle()` options that store a chunk with the given `share`. The API's own default,
+ * with `origins` omitted, is same-site sharing.
+ */
+export function writeOptions(share: CosShare = '*'): { create: true, origins?: '*' | string[] } {
+  if (share === 'same-site') {
+    return { create: true }
+  }
+  return { create: true, origins: share }
 }
 
 /**
@@ -105,6 +129,7 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
   const { imports } = pageMap
 
   const chunks = Object.values(manifest.chunks)
+  const shares = new Map(chunks.map(chunk => [chunk.hash, chunk.share]))
   const hashes = new Set(chunks.map(chunk => chunk.hash))
   const own = new Set(readStored().filter(hash => hashes.has(hash)))
   const lookups = new Set([
@@ -152,7 +177,7 @@ export async function runCosLoader(manifest: CosManifest): Promise<void> {
         if (!canStore) {
           return false
         }
-        const handle = await cos.getFileHandle({ algorithm: 'SHA-256', value: hash }, { create: true, origins: '*' })
+        const handle = await cos.getFileHandle({ algorithm: 'SHA-256', value: hash }, writeOptions(shares.get(hash)))
         const writable = await handle.createWritable()
         await writable.write(blob)
         await writable.close()

@@ -276,12 +276,13 @@ interface StubCosOptions {
 /** A `navigator.crossOriginStorage` kept in `sessionStorage`, so it survives reloads. */
 function stubCos({ files: seed = {}, deny, quota }: StubCosOptions): void {
   const files: Record<string, string> = JSON.parse(sessionStorage.getItem('stub-cos') ?? 'null') ?? seed
-  const calls: Array<{ create: boolean, hash: string }> = []
+  const calls: Array<{ create: boolean, hash: string, origins?: unknown }> = []
   Object.assign(window, { cosCalls: calls })
   Object.defineProperty(navigator, 'crossOriginStorage', {
     value: {
-      async getFileHandle({ value }: { value: string }, { create = false } = {}) {
-        calls.push({ create, hash: value })
+      async getFileHandle({ value }: { value: string }, options: { create?: boolean, origins?: unknown } = {}) {
+        const create = options.create ?? false
+        calls.push({ create, hash: value, ...'origins' in options ? { origins: options.origins } : {} })
         if (deny) {
           throw new DOMException('Blocked', 'NotAllowedError')
         }
@@ -388,6 +389,8 @@ describe('browser (loader with a stub cos)', () => {
       await page.addInitScript(stubCos, {})
 
       const first = await load(page)
+      const writes = await page.evaluate(() => (window as unknown as { cosCalls: Array<{ create: boolean, origins?: unknown }> }).cosCalls.filter(call => call.create))
+      expect(writes.map(call => call.origins)).toEqual(Array.from({ length: 13 }, () => '*'))
       expect(first.lookups.sort()).toEqual(largest.sort())
       expect(first.fetched).toHaveLength(13)
       expect(first.creates).toHaveLength(13)
@@ -489,6 +492,57 @@ describe('browser (loader with a stub cos)', () => {
     }
     finally {
       writeFileSync(file, original)
+      await browser.close()
+    }
+  })
+})
+
+describe('browser (loader with a scoped share)', () => {
+  let server: { origin: string, close: () => Promise<void> }
+
+  beforeAll(async () => {
+    for (const [name, value] of [['cos-fixture-same-site', 'local'], ['cos-fixture-listed', 'listed']]) {
+      const pkg = join(scratchRoot, 'node_modules', name!)
+      mkdirSync(pkg, { recursive: true })
+      writeFileSync(join(pkg, 'package.json'), `{"name":"${name}","type":"module","main":"index.js"}`)
+      writeFileSync(join(pkg, 'index.js'), `export const value = "${value}"\n`)
+    }
+    const root = writeApp('import { value as a } from "cos-fixture-same-site"\nimport { value as b } from "cos-fixture-listed"\ndocument.querySelector("#app").textContent = `${a} ${b}`\n')
+    const outDir = join(root, 'dist')
+
+    const { cosPlugin } = await import('../src/index')
+    await build({
+      root,
+      logLevel: 'error',
+      plugins: [cosPlugin({
+        packages: ['cos-fixture-same-site', 'cos-fixture-listed'],
+        share: name => name === 'cos-fixture-same-site' ? 'same-site' : ['https://b.example', 'https://a.example'],
+      })],
+      build: { outDir, emptyOutDir: true },
+    })
+    server = await serve(outDir)
+  }, 120_000)
+
+  afterAll(async () => {
+    await server?.close()
+    rmSync(scratchRoot, { recursive: true, force: true })
+  })
+
+  it('stores each chunk with the scope its package asked for', async () => {
+    const browser = await launchPlainBrowser()
+    try {
+      const page = await browser.newPage()
+      await page.addInitScript(stubCos, {})
+      await page.goto(server.origin, { waitUntil: 'networkidle' })
+      await page.locator('#app', { hasText: 'local listed' }).waitFor({ timeout: 5000 })
+      await page.waitForFunction(() => localStorage.getItem('cos:stored') !== null)
+      const writes = await page.evaluate(() => (window as unknown as { cosCalls: Array<{ create: boolean, origins?: unknown }> }).cosCalls.filter(call => call.create))
+      expect(writes).toHaveLength(2)
+      // Same-site is the API's default, so the loader leaves `origins` out entirely.
+      expect(writes.filter(call => !('origins' in call))).toHaveLength(1)
+      expect(writes.filter(call => 'origins' in call).map(call => call.origins)).toEqual([['https://a.example', 'https://b.example']])
+    }
+    finally {
       await browser.close()
     }
   })
